@@ -1,0 +1,31 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[manifest]
+members = [
+    "cats-and-dogs",
+    "processos-so",
+    "programmers",
+    "rr-srtf",
+]
+
+[[package]]
+name = "cats-and-dogs"
+version = "0.1.0"
+source = { editable = "packages/cats-and-dogs" }
+
+[[package]]
+name = "processos-so"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
+name = "programmers"
+version = "0.1.0"
+source = { editable = "packages/programmers" }
+
+[[package]]
+name = "rr-srtf"
+version = "0.1.0"
+source = { editable = "packages/rr-srtf" }

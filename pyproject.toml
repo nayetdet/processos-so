@@ -1,0 +1,14 @@
+[project]
+name = "processos-so"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "packages/programmers",
+    "packages/rr-srtf",
+    "packages/cats-and-dogs",
+]
