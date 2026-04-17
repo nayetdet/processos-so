@@ -10,4 +10,4 @@ programmers:
 	uv run python -m programmers
 
 rr-srtf:
-	uv run python -m rr-srtf
+	uv run python -m rr_srtf
