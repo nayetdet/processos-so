@@ -6,9 +6,9 @@ class Event(Enum):
     ARRIVE = 'ARRIVE'
     RUNNING = 'RUNNING'
     SWITCHING = 'SWITCHING'
-    COMPLETED = 'COMPLETED'
+    FINISH = 'FINISH'
     PREEMPT = 'PREEMPT'
-    DISPATCHED = 'DISPATCHED'
+    DISPATCH = 'DISPATCH'
 
 class SchedulingEventSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
