@@ -15,6 +15,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
+from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 
 class SchedulingFigureFactory:
     MIN_FIGURE_WIDTH: float = 10.0
@@ -23,6 +24,7 @@ class SchedulingFigureFactory:
     ARRIVAL_STRIP_HEIGHT: float = 1.1
     ROW_HEIGHT: float = 1.0
     BAR_HEIGHT: float = 0.7
+    IDLE_HATCH: str = "////"
 
     @staticmethod
     def plot(schedulings: List[Tuple[SchedulingSchema, List[SchedulingTimelineSchema]]]) -> Figure:
@@ -62,6 +64,11 @@ class SchedulingFigureFactory:
 
         for scheduling, scheduling_timelines in schedulings:
             for scheduling_timeline in scheduling_timelines:
+                remaining_times_by_step = SchedulingFigureFactory.__get_remaining_times_by_step(
+                    scheduling=scheduling,
+                    scheduling_timeline=scheduling_timeline,
+                )
+
                 yticks.append(row_index)
                 yticklabels.append(
                     SchedulingFigureFactory.__get_row_label(
@@ -71,13 +78,21 @@ class SchedulingFigureFactory:
                     )
                 )
 
-                for step in scheduling_timeline.steps:
+                SchedulingFigureFactory.__plot_idle_segments(
+                    ax=timeline_ax,
+                    row_index=row_index,
+                    steps=scheduling_timeline.steps,
+                    max_time=max_time,
+                )
+
+                for step, remaining_time in zip(scheduling_timeline.steps, remaining_times_by_step):
                     SchedulingFigureFactory.__plot_step(
                         ax=timeline_ax,
                         row_index=row_index,
                         pid=step.pid,
                         start=step.start,
                         end=step.end,
+                        remaining_time=remaining_time,
                         color=colors_by_pid.get(step.pid),
                     )
 
@@ -125,6 +140,7 @@ class SchedulingFigureFactory:
                 )
                 for pid, color in colors_by_pid.items()
             ]
+
             fig.legend(
                 handles=legend_handles,
                 loc="upper center",
@@ -163,7 +179,6 @@ class SchedulingFigureFactory:
     def __get_colors_by_pid(schedulings: List[Tuple[SchedulingSchema, List[SchedulingTimelineSchema]]]) -> Dict[str, Tuple[float, float, float, float]]:
         pids: List[str] = []
         seen_pids: set[str] = set()
-
         for scheduling, _ in schedulings:
             for process in scheduling.workload.processes:
                 if process.pid in seen_pids:
@@ -186,10 +201,25 @@ class SchedulingFigureFactory:
         algorithm_label = scheduling_timeline.algorithm
         if scheduling_timeline.algorithm == "RR":
             algorithm_label = f"RR (q={scheduling_timeline.quantum})"
-
         if show_challenge_id:
             return f"{scheduling.challenge_id} | {algorithm_label}"
         return algorithm_label
+
+    @staticmethod
+    def __get_remaining_times_by_step(
+        scheduling: SchedulingSchema,
+        scheduling_timeline: SchedulingTimelineSchema,
+    ) -> List[int]:
+        remaining_time_by_pid: Dict[str, int] = {
+            process.pid: process.burst_time
+            for process in scheduling.workload.processes
+        }
+
+        remaining_times_by_step: List[int] = []
+        for step in scheduling_timeline.steps:
+            remaining_time_by_pid[step.pid] -= step.end - step.start
+            remaining_times_by_step.append(remaining_time_by_pid[step.pid])
+        return remaining_times_by_step
 
     @staticmethod
     def __plot_step(
@@ -198,6 +228,7 @@ class SchedulingFigureFactory:
         pid: str,
         start: int,
         end: int,
+        remaining_time: int,
         color: Tuple[float, float, float, float] | None,
     ) -> None:
         duration: int = end - start
@@ -213,16 +244,22 @@ class SchedulingFigureFactory:
             linewidth=0.8,
         )
 
+        label_text: str = f"{pid} (r={remaining_time})"
         label_rotation: int = 0
-        label_font_size: int = 9
-        if duration < 2:
+        if duration >= 8:
+            label_font_size = 7.0
+        elif duration >= 5:
+            label_font_size = 6.0
+        elif duration >= 3:
+            label_font_size = 5.2
+        else:
             label_rotation = 90
-            label_font_size = 7
+            label_font_size = 5.0
 
         ax.text(
             x=start + duration / 2,
             y=row_index,
-            s=pid,
+            s=label_text,
             ha="center",
             va="center",
             color="#ffffff",
@@ -231,6 +268,37 @@ class SchedulingFigureFactory:
             rotation=label_rotation,
             clip_on=True,
         )
+
+    @staticmethod
+    def __plot_idle_segments(
+        ax: Axes,
+        row_index: int,
+        steps: List[SchedulingTimelineStepSchema],
+        max_time: int,
+    ) -> None:
+        idle_segments: List[Tuple[int, int]] = []
+        previous_end: int = 0
+        for step in steps:
+            if step.start > previous_end:
+                idle_segments.append((previous_end, step.start))
+            previous_end = step.end
+
+        if previous_end < max_time:
+            idle_segments.append((previous_end, max_time))
+
+        for start, end in idle_segments:
+            ax.barh(
+                y=row_index,
+                width=end - start,
+                left=start,
+                height=SchedulingFigureFactory.BAR_HEIGHT,
+                align="center",
+                facecolor="#f8fafc",
+                edgecolor="#94a3b8",
+                linewidth=0.6,
+                hatch=SchedulingFigureFactory.IDLE_HATCH,
+                zorder=0,
+            )
 
     @staticmethod
     def __style_timeline_axis(
@@ -272,6 +340,7 @@ class SchedulingFigureFactory:
             color="#cbd5e1",
             linewidth=1.0,
         )
+
         ax.text(
             0.0,
             0.92,
@@ -314,6 +383,7 @@ class SchedulingFigureFactory:
                     alpha=0.8,
                     zorder=1,
                 )
+
                 ax.scatter(
                     process.arrival_time,
                     arrival_level,
@@ -324,6 +394,7 @@ class SchedulingFigureFactory:
                     linewidths=0.5,
                     zorder=3,
                 )
+
                 ax.text(
                     x=process.arrival_time,
                     y=arrival_level + 0.08,
