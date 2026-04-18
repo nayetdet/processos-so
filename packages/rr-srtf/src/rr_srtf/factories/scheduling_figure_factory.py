@@ -1,9 +1,13 @@
+import os
+import tempfile
 import matplotlib
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 from matplotlib.figure import Figure
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
+
+os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 
 matplotlib.use("Agg")
 
