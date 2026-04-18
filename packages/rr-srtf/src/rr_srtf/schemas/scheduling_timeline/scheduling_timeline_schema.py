@@ -17,12 +17,4 @@ class SchedulingTimelineSchema(BaseModel):
         if self.algorithm == "SRTF" and self.quantum is not None:
             raise ValueError("quantum must not be provided for SRTF algorithm")
 
-        for index, step in enumerate(self.steps):
-            if step.end <= step.start:
-                raise ValueError(f"steps[{index}] must have end greater than start")
-
-        for previous_step, current_step in pairwise(self.steps):
-            if current_step.start < previous_step.end:
-                raise ValueError("steps must be ordered by start time and must not overlap")
-
         return self
