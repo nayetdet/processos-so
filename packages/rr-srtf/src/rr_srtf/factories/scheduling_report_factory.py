@@ -11,7 +11,7 @@ class SchedulingReportFactory:
         scheduling_timelines: List[SchedulingTimelineSchema],
         scheduling_metrics: List[SchedulingMetricsSchema],
         figure_path: Path,
-        source: Optional[Path] = None,
+        source: Optional[Path] = None
     ) -> Dict[str, Any]:
         return {
             "source": str(source) if source is not None else "mock",
