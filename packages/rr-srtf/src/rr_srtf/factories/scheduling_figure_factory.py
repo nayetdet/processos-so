@@ -1,13 +1,11 @@
 import matplotlib
-matplotlib.use("Agg")
-
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 from typing import List, Tuple
-
+from matplotlib.figure import Figure
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 
+matplotlib.use("Agg")
 
 class SchedulingFigureFactory:
     @staticmethod
