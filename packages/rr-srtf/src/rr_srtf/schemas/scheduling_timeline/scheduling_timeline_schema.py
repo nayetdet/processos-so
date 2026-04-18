@@ -7,8 +7,8 @@ class SchedulingTimelineSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     algorithm: Literal["RR", "SRTF"]
-    steps: List[SchedulingTimelineStepSchema] = Field(min_length=1)
     quantum: Optional[int] = Field(default=None, gt=0)
+    steps: List[SchedulingTimelineStepSchema] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_timeline(self) -> Self:

@@ -1,11 +1,13 @@
 import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
-from typing import Tuple, List
+from typing import List, Tuple
+
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 
-matplotlib.use("Agg")
 
 class SchedulingFigureFactory:
     @staticmethod
@@ -14,26 +16,33 @@ class SchedulingFigureFactory:
 
         yticks: List[int] = []
         yticklabels: List[str] = []
-        for i, (scheduling, scheduling_timelines) in enumerate(schedulings):
-            yticks.append(i)
-            yticklabels.append(scheduling.challenge_id)
-
+        row_index: int = 0
+        for scheduling, scheduling_timelines in schedulings:
             for scheduling_timeline in scheduling_timelines:
-                duration: int = scheduling_timeline.end - scheduling_timeline.start
-                ax.barh(
-                    y=i,
-                    width=duration,
-                    left=scheduling_timeline.start,
-                    align="center"
-                )
+                yticks.append(row_index)
+                if scheduling_timeline.algorithm == "RR":
+                    yticklabels.append(f"{scheduling.challenge_id} | RR (q={scheduling_timeline.quantum})")
+                else:
+                    yticklabels.append(f"{scheduling.challenge_id} | {scheduling_timeline.algorithm}")
 
-                ax.text(
-                    x=scheduling_timeline.start + duration / 2,
-                    y=i,
-                    s=scheduling_timeline.pid,
-                    ha="center",
-                    va="center"
-                )
+                for step in scheduling_timeline.steps:
+                    duration: int = step.end - step.start
+                    ax.barh(
+                        y=row_index,
+                        width=duration,
+                        left=step.start,
+                        align="center",
+                    )
+
+                    ax.text(
+                        x=step.start + duration / 2,
+                        y=row_index,
+                        s=step.pid,
+                        ha="center",
+                        va="center",
+                    )
+
+                row_index += 1
 
         ax.set_xlabel("Time")
         ax.set_ylabel("Executions")
