@@ -1,5 +1,6 @@
 from random import Random
 from typing import Dict, List, Optional, Set
+from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
@@ -137,8 +138,14 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         start: int,
         end: int
     ) -> None:
-        if steps and steps[-1].pid == pid and steps[-1].end == start:
+        if (
+            steps
+            and steps[-1].state == SchedulingTimelineStepState.RUNNING
+            and steps[-1].pid == pid
+            and steps[-1].end == start
+        ):
             steps[-1] = SchedulingTimelineStepSchema(
+                state=SchedulingTimelineStepState.RUNNING,
                 pid=pid,
                 start=steps[-1].start,
                 end=end
@@ -148,6 +155,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
 
         steps.append(
             SchedulingTimelineStepSchema(
+                state=SchedulingTimelineStepState.RUNNING,
                 pid=pid,
                 start=start,
                 end=end

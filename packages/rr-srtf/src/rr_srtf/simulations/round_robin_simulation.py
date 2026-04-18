@@ -1,5 +1,6 @@
 from collections import deque
 from typing import Dict, List, Optional
+from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
@@ -63,12 +64,11 @@ class RoundRobinSimulation(BaseSimulation):
                 )
 
             runtime: int = min(quantum, remaining_times[process.pid])
-            steps.append(
-                SchedulingTimelineStepSchema(
-                    pid=process.pid,
-                    start=time,
-                    end=time + runtime
-                )
+            cls.__append_execution_step(
+                steps=steps,
+                pid=process.pid,
+                start=time,
+                end=time + runtime
             )
 
             time += runtime
@@ -102,3 +102,33 @@ class RoundRobinSimulation(BaseSimulation):
             processes_queue.append(processes[process_index])
             process_index += 1
         return process_index
+
+    @staticmethod
+    def __append_execution_step(
+        steps: List[SchedulingTimelineStepSchema],
+        pid: str,
+        start: int,
+        end: int
+    ) -> None:
+        if (
+            steps
+            and steps[-1].state == SchedulingTimelineStepState.RUNNING
+            and steps[-1].pid == pid
+            and steps[-1].end == start
+        ):
+            steps[-1] = SchedulingTimelineStepSchema(
+                state=SchedulingTimelineStepState.RUNNING,
+                pid=pid,
+                start=steps[-1].start,
+                end=end
+            )
+            return
+
+        steps.append(
+            SchedulingTimelineStepSchema(
+                state=SchedulingTimelineStepState.RUNNING,
+                pid=pid,
+                start=start,
+                end=end
+            )
+        )

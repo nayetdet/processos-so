@@ -1,6 +1,7 @@
 from collections import defaultdict
 from itertools import pairwise
 from typing import DefaultDict, Dict, List, Optional, Set
+from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
@@ -34,9 +35,10 @@ class SchedulingAnalysis:
     ) -> SchedulingMetricsSchema:
         process_metrics: SchedulingProcessMetricsSchema = cls.__get_process_metrics(scheduling, steps_by_pid)
         process_count: int = len(scheduling.workload.processes)
+        running_steps: List[SchedulingTimelineStepSchema] = cls.__get_running_steps(timeline)
 
         total_time: int = timeline.steps[-1].end
-        busy_time: int = sum(step.end - step.start for step in timeline.steps)
+        busy_time: int = sum(step.end - step.start for step in running_steps)
         completed_at_window: int = sum(
             steps_by_pid[process.pid][-1].end <= scheduling.metadata.throughput_window_T
             for process in scheduling.workload.processes
@@ -84,9 +86,10 @@ class SchedulingAnalysis:
 
     @staticmethod
     def __get_overhead_metrics(scheduling: SchedulingSchema, timeline: SchedulingTimelineSchema) -> SchedulingOverheadMetricsSchema:
+        running_steps: List[SchedulingTimelineStepSchema] = SchedulingAnalysis.__get_running_steps(timeline)
         ctx_switch_count: int = sum(
             previous_step.pid != current_step.pid
-            for previous_step, current_step in pairwise(timeline.steps)
+            for previous_step, current_step in pairwise(running_steps)
         )
 
         ctx_switch_time: int = ctx_switch_count * scheduling.metadata.context_switch_cost
@@ -100,8 +103,16 @@ class SchedulingAnalysis:
     def __group_steps_by_id(scheduling: SchedulingSchema, timeline: SchedulingTimelineSchema) -> Dict[str, List[SchedulingTimelineStepSchema]]:
         processes_by_pid: Set[str] = {process.pid for process in scheduling.workload.processes}
         steps_by_pid: DefaultDict[str, List[SchedulingTimelineStepSchema]] = defaultdict(list)
-        for step in timeline.steps:
+        for step in SchedulingAnalysis.__get_running_steps(timeline):
             if step.pid not in processes_by_pid:
                 raise ValueError(f"unknown pid in timeline: {step.pid}")
             steps_by_pid[step.pid].append(step)
         return dict(steps_by_pid)
+
+    @staticmethod
+    def __get_running_steps(timeline: SchedulingTimelineSchema) -> List[SchedulingTimelineStepSchema]:
+        return [
+            step
+            for step in timeline.steps
+            if step.state == SchedulingTimelineStepState.RUNNING
+        ]
