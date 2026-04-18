@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Self
+from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class SchedulingMetadataSchema(BaseModel):
@@ -10,7 +10,7 @@ class SchedulingMetadataSchema(BaseModel):
     rr_quantums: Optional[List[int]] = None
 
     @model_validator(mode="after")
-    def validate_metadata(self) -> Self:
+    def validate_metadata(self) -> "SchedulingMetadataSchema":
         if len(set(self.algorithms)) != len(self.algorithms):
             raise ValueError("algorithms must not contain duplicates")
 
