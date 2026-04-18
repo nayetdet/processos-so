@@ -1,4 +1,3 @@
-from typing import Optional, Any
 from pydantic import BaseModel, Field
 
 class Process(BaseModel):
@@ -11,6 +10,7 @@ class Process(BaseModel):
     finish_time: int = Field(default=None, init=False)
     waiting_time: int = Field(default=0, init=False)
     turnaround_time: int = Field(default=0, init=False)
+    response_time: int = Field(default=0, init=False)
 
     def model_post_init(self, context) -> None:
         self.remaining_time = self.burst_time
