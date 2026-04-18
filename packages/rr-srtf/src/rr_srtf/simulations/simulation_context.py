@@ -2,35 +2,52 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
+from pydantic import BaseModel, Field, ConfigDict
+
 from rr_srtf.models.process_model import ProcessModel
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_event_schema import SchedulingEventSchema
 
 
-@dataclass
-class SimulationContext:
+class SimulationContext(BaseModel):
+    model_config = ConfigDict(frozen=False)
+
     processes: list[SchedulingWorkloadProcessSchema]
     quantum: int
     ctx_switch_cost: int
     throughput_window: int
     cost_on_finish: bool = False
 
-    timeline: list[SchedulingEventSchema] = field(default_factory=list)
-    message_parts: list[str] = field(default_factory=list)
+    timeline: list[SchedulingEventSchema] = Field(default=[],init=False)
+    message_parts: list[str] = Field(default=[],init=False)
 
-    next_arrival: int = 0
-    ready_queue: deque[ProcessModel] = field(default_factory=deque)
-    completed: list[ProcessModel] = field(default_factory=list)
+    next_arrival: int = Field(default=0,init=False)
+    ready_queue: deque[ProcessModel] = Field(default=deque(),init=False)
+    completed: list[ProcessModel] = Field(default=[],init=False)
 
-    clock: int = 0
-    inner_clock: int = 0
-    last_pid: Optional[str] = None
-    current: Optional[ProcessModel] = None
-    tick_done: bool = False
-    switching: bool = False
-    just_dispatched: bool = False
-    just_completed: bool = False
-    sched_oh: int = 0  # amount of ticks the scheduler was in the cpu
+    clock: int = Field(default=0,init=False)
+    inner_clock: int = Field(default=0,init=False)
+    current: Optional[ProcessModel] = Field(default=None, init=False)
+    last_pid: Optional[str] = Field(default=None,init=False)
+    sched_oh: int = Field(default=0, init=False)  # amount of ticks the scheduler was in the cpu
+
+    switching: bool =  Field(default=False,init=False)
+    just_dispatched: bool =  Field(default=False,init=False)
+    just_completed: bool =  Field(default=False,init=False)
+
+    _finished: bool = False
+
+    @property
+    def finished(self) -> bool:
+        return self._finished
+
+    def finish(self):
+        object.__setattr__(self, '_finished', True)
+
+    def __setattr__(self, name, value):
+        if self._finished:
+            raise AttributeError(f"Simulation has already finished, cannot set '{name}'.")
+        super().__setattr__(name, value)
 
     def add_event(self, event: SchedulingEventSchema):
         self.timeline.append(event)

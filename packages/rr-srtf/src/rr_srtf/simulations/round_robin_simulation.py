@@ -1,5 +1,6 @@
-from typing import List
+from typing import List, Optional
 
+from rr_srtf.factories.scheduling_metrics_factory import SchedulingMetricsFactory
 from rr_srtf.models.process_model import ProcessModel
 from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
@@ -49,26 +50,25 @@ class RoundRobinSimulation(BaseSimulation):
 
         while context.next_arrival < len(context.processes) or context.ready_queue or context.current is not None:
             context.begin_tick()
-
             # ARRIVE
-            if not context.tick_done:
-                cls.__handle_arrivals(context)
+            cls.__handle_arrivals(context)
 
             # RUNNING
             if not context.switching:
                 cls.__handle_running(context)
 
             # CTX_SWITCH
-            if not context.tick_done and context.switching and context.current is not None:
+            if context.switching and context.current is not None:
                 cls.__handle_ctx_switch(context)
 
-            context.tick_done = False
             context.flush_tick()
+
+        context.finish()
 
         return SchedulingResultSchema(
             timeline=context.timeline,
             processes=context.completed,
-            stats=cls.__calc_metrics(context)
+            stats=SchedulingMetricsFactory.calc_metrics(context)
         )
 
     @classmethod
@@ -80,67 +80,91 @@ class RoundRobinSimulation(BaseSimulation):
             context.next_arrival += 1
 
     @classmethod
-    def __handle_running(cls, context: SimulationContext) -> None:
-        if not context.tick_done and not context.switching:
-            if not context.ready_queue and context.current is None :  # no process running and empty queue -> wait for next arrival
-                context.add_event(SchedulingEventSchema(time=context.clock, type=Event.IDLE))
+    def __handle_tick_start(cls, context: SimulationContext) -> bool:
+        # No process running and empty queue -> wait for next arrival
+        if context.current is None and not context.ready_queue:
+            context.add_event(SchedulingEventSchema(time=context.clock, type=Event.IDLE))
+            return True
 
-            elif context.ready_queue and context.current is None:  # the queue has processes but none is running -> start switching to the next process
-                context.current = context.ready_queue.popleft()
-                if context.current is not None and context.last_pid == context.current.pid:  # dont need context switch
-                    context.inner_clock = context.quantum  # just restart the quantum
-                else:
-                    if context.just_completed and not context.cost_on_finish:
-                        context.inner_clock = context.quantum
-                        context.just_completed = False
-                        context.just_dispatched = True
-                    else:
-                        context.switching = True
-                        context.inner_clock = context.ctx_switch_cost
+        # The queue has processes but none is running -> start switching to the next process
+        if context.current is None:
+            context.current = context.ready_queue.popleft()
 
-        if not context.tick_done and not context.switching and context.current is not None:
-            if context.just_dispatched:
-                context.just_dispatched = False
-                if context.current.start_time is None:
-                    context.current.start_time = context.clock
-                    context.current.response_time = context.current.start_time - context.current.arrival_time
-                context.add_event(SchedulingEventSchema(
-                    time=context.clock,
-                    type=Event.DISPATCH,
-                    ctx=context.current.pid
-                ))
-            context.inner_clock -= 1
-            context.current.remaining_time -= 1
+            if context.last_pid == context.current.pid:
+                # Same process re-scheduled — no context switch needed, restart quantum
+                context.inner_clock = context.quantum
+                context.just_dispatched = True
+
+            elif context.just_completed and not context.cost_on_finish:
+                # Previous process finished and cost_on_finish is off — skip switch penalty.
+                context.inner_clock = context.quantum
+                context.just_completed = False
+                context.just_dispatched = True
+
+            else:
+                context.switching = True
+                context.inner_clock = context.ctx_switch_cost
+                return True
+
+        if context.current is not None and context.just_dispatched:
+            context.just_dispatched = False
+            if context.current.start_time is None:
+                context.current.start_time = context.clock
+                context.current.response_time = context.current.start_time - context.current.arrival_time
             context.add_event(SchedulingEventSchema(
-                time=context.clock,
-                type=Event.RUNNING,
-                ctx=context.current.pid,
-                detail=f"{f'(q={context.inner_clock + 1} → {context.inner_clock})':<13}  {f'(r={context.current.remaining_time + 1} → {context.current.remaining_time})':<13}"
+                time=context.clock, type=Event.DISPATCH, ctx=context.current.pid,
             ))
-            end_ev = None
-            if context.current.remaining_time == 0:  # cur_proc also finishes on this clock pulse
-                end_ev = SchedulingEventSchema(
-                    time=context.clock,
-                    type=Event.FINISH,
-                    ctx=context.current.pid
-                )
-                context.last_pid = context.current.pid
-                context.current.mark_completed(context.clock)
-                context.completed.append(context.current)
-                context.just_completed = True
-            if context.inner_clock == 0 and end_ev is None:  # cur_proc is also preempted on this clock pulse
-                end_ev = SchedulingEventSchema(
-                    time=context.clock,
-                    type=Event.PREEMPT,
-                    ctx=context.current.pid,
-                    detail=f"(r={context.current.remaining_time})"
-                )
-                context.last_pid = context.current.pid
-                context.ready_queue.append(context.current)
-            if end_ev is not None:
-                context.add_event(end_ev)
-                context.current = None
-            context.tick_done = True
+
+        return False
+
+    @classmethod
+    def __handle_running(cls, context: SimulationContext) -> None:
+        early_return: bool = cls.__handle_tick_start(context)
+
+        if early_return or context.current is None: return
+
+        context.inner_clock -= 1
+        context.current.remaining_time -= 1
+        context.add_event(SchedulingEventSchema(
+            time=context.clock,
+            type=Event.RUNNING,
+            ctx=context.current.pid,
+            detail=(
+                f"{f'(q={context.inner_clock + 1} → {context.inner_clock})':<13}  "
+                f"{f'(r={context.current.remaining_time + 1} → {context.current.remaining_time})':<13}"
+            ),
+        ))
+
+        cls.__handle_tick_end(context)
+
+    @classmethod
+    def __handle_tick_end(cls, context: SimulationContext) -> None:
+        end_event: Optional[SchedulingEventSchema] = None
+
+        if context.current is None: return
+
+        if context.current.remaining_time == 0: # current process also finishes on the end of this clock pulse
+            context.current.mark_completed(context.clock)
+            context.completed.append(context.current)
+            end_event = SchedulingEventSchema(
+                time=context.clock, type=Event.FINISH, ctx=context.current.pid,
+            )
+            context.last_pid = context.current.pid
+            context.just_completed = True
+
+        elif context.inner_clock == 0: # current process is also preempted on the end of this clock pulse
+            end_event = SchedulingEventSchema(
+                time=context.clock,
+                type=Event.PREEMPT,
+                ctx=context.current.pid,
+                detail=f"(r={context.current.remaining_time})",
+            )
+            context.last_pid = context.current.pid
+            context.ready_queue.append(context.current)
+
+        if end_event is not None:
+            context.add_event(end_event)
+            context.current = None
 
     @classmethod
     def __handle_ctx_switch(cls, context: SimulationContext) -> None:
@@ -157,33 +181,3 @@ class RoundRobinSimulation(BaseSimulation):
             context.switching = False
             context.inner_clock = context.quantum
             context.just_dispatched = True
-
-
-
-    @classmethod
-    def __calc_metrics(cls, context: SimulationContext) -> SchedulingMetricsSchema:
-        n = len(context.completed)
-        total_time = context.clock - 1
-        cpu_busy = sum(p.burst_time for p in context.completed)
-        ctx_time = sum(1 for e in context.timeline if e.type == Event.SWITCHING)
-
-        result = {
-            "aggregate": {
-                "avg_tat": sum(p.turnaround_time for p in context.completed) / n,
-                "avg_wt": sum(p.waiting_time for p in context.completed) / n,
-                "avg_rt": sum(p.response_time for p in context.completed) / n
-            },
-            "system": {
-                "total_time": total_time,
-                "busy": cpu_busy,
-                "util": round(cpu_busy / total_time * 100 if total_time else 0, 2),
-                "thr_at_window": round(sum(1 for p in context.completed if p.finish_time <= context.throughput_window) / context.throughput_window, 4 ),
-                "thr_overall": round(n / total_time, 4) if total_time else 0
-            },
-            "overhead": {
-                "ctx_count": ctx_time / context.ctx_switch_cost,
-                "ctx_time": ctx_time,
-                "scheduler": context.sched_oh
-            }
-        }
-        return SchedulingMetricsSchema.model_validate(result)
