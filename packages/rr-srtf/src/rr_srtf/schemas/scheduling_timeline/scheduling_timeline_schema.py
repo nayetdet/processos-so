@@ -1,7 +1,9 @@
-from itertools import pairwise
 from typing import List, Literal, Optional, Self
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
+
 
 class SchedulingTimelineSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

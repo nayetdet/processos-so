@@ -1,39 +1,37 @@
+import logging
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict
-
-from rr_srtf.models.process_model import ProcessModel
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
-from rr_srtf.schemas.scheduling_timeline.scheduling_event_schema import SchedulingEventSchema
+from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_entry_schema import (
+    SchedulingTimelineEntrySchema,
+    SchedulingTimelineEntryType)
+from rr_srtf.simulations.runtime_process import RuntimeProcess
 
 
-class SimulationContext(BaseModel):
-    model_config = ConfigDict(frozen=False)
-
+@dataclass
+class SimulationContext:
     processes: list[SchedulingWorkloadProcessSchema]
     quantum: int
     ctx_switch_cost: int
     throughput_window: int
-    cost_on_finish: bool = False
+    ctx_switch_on_finish: bool = False
+    sched_decision_cost: int = 0
 
-    timeline: list[SchedulingEventSchema] = Field(default=[],init=False)
-    message_parts: list[str] = Field(default=[],init=False)
+    timeline: list[SchedulingTimelineEntrySchema] = field(default_factory=list, init=False)
+    log_parts: list[str] = field(default_factory=list, init=False)
 
-    next_arrival: int = Field(default=0,init=False)
-    ready_queue: deque[ProcessModel] = Field(default=deque(),init=False)
-    completed: list[ProcessModel] = Field(default=[],init=False)
+    next_arrival: int = field(default=0, init=False)
+    ready_queue: deque[RuntimeProcess] = field(default_factory=deque, init=False)
+    completed: list[RuntimeProcess] = field(default_factory=list, init=False)
 
-    clock: int = Field(default=0,init=False)
-    inner_clock: int = Field(default=0,init=False)
-    current: Optional[ProcessModel] = Field(default=None, init=False)
-    last_pid: Optional[str] = Field(default=None,init=False)
-    sched_oh: int = Field(default=0, init=False)  # amount of ticks the scheduler was in the cpu
-
-    switching: bool =  Field(default=False,init=False)
-    just_dispatched: bool =  Field(default=False,init=False)
-    just_completed: bool =  Field(default=False,init=False)
+    clock: int = field(default=0, init=False)
+    inner_clock: int = field(default=0, init=False)
+    ongoing_event: Optional[SchedulingTimelineEntryType] = field(default=None, init=False)
+    current: Optional[RuntimeProcess] = field(default=None, init=False)
+    last_pid: Optional[str] = field(default=None, init=False)
+    scheduler_overhead: int = field(default=0, init=False)  # amount of ticks the scheduler was in the cpu
 
     _finished: bool = False
 
@@ -49,13 +47,15 @@ class SimulationContext(BaseModel):
             raise AttributeError(f"Simulation has already finished, cannot set '{name}'.")
         super().__setattr__(name, value)
 
-    def add_event(self, event: SchedulingEventSchema):
+    def add_event(self, event: SchedulingTimelineEntrySchema):
         self.timeline.append(event)
-        self.message_parts.append(event.no_time_str())
+        self.log_parts.append(event.no_time_str())
 
     def begin_tick(self) -> None:
-        self.message_parts = [f"[{self.clock:03}]"]
+        self.log_parts = [f"[{self.clock:03}]"]
 
     def flush_tick(self) -> None:
-        print(" | ".join(self.message_parts))
+        print(" | ".join(self.log_parts))
+
+    def tick_clock(self):
         self.clock += 1
