@@ -1,6 +1,7 @@
+import heapq
 from random import Random
-from typing import Dict, List, Optional, Set
-from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
+from typing import Dict, List, Optional
+
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
@@ -30,7 +31,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         rng: Random = Random(cls.SEED)
         time: int = 0
         process_index: int = 0
-        ready_pids: Set[str] = set()
+        ready_pids: list[tuple[int, float, str]] = []
         running_pid: Optional[str] = None
         last_pid: Optional[str] = None
 
@@ -39,7 +40,9 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 time=time,
                 processes=processes,
                 ready_pids=ready_pids,
-                process_index=process_index
+                remaining_times=remaining_times,
+                process_index=process_index,
+                rng=rng
             )
 
             if running_pid is not None and cls.__should_preempt(
@@ -47,7 +50,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 ready_pids=ready_pids,
                 remaining_times=remaining_times
             ):
-                ready_pids.add(running_pid)
+                heapq.heappush(ready_pids, (remaining_times[running_pid], rng.random(), running_pid))
                 last_pid = running_pid
                 running_pid = None
 
@@ -57,23 +60,19 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                     last_pid = None
                     continue
 
-                next_pid: str = cls.__select_next_pid(
-                    ready_pids=ready_pids,
-                    remaining_times=remaining_times,
-                    rng=rng
-                )
+                next_pid: str = cls.__select_next_pid(ready_pids=ready_pids)
 
                 if last_pid is not None and last_pid != next_pid:
                     if context_switch_cost > 0:
                         time += context_switch_cost
+                        running_pid = next_pid
                         last_pid = None
                         continue
                     last_pid = None
 
-                ready_pids.remove(next_pid)
                 running_pid = next_pid
 
-            cls.__append_execution_step(
+            cls._append_execution_step(
                 steps=steps,
                 pid=running_pid,
                 start=time,
@@ -96,68 +95,31 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
     def __enqueue_arrived_processes(
         time: int,
         processes: List[SchedulingWorkloadProcessSchema],
-        ready_pids: Set[str],
-        process_index: int
+        ready_pids: list[tuple[int, float, str]],
+        remaining_times: Dict[str, int],
+        process_index: int,
+        rng: Random
     ) -> int:
         while process_index < len(processes) and processes[process_index].arrival_time <= time:
-            ready_pids.add(processes[process_index].pid)
+            pid: str = processes[process_index].pid
+            heapq.heappush(ready_pids, (remaining_times[pid], rng.random(), pid))
             process_index += 1
         return process_index
 
     @staticmethod
     def __should_preempt(
         running_pid: str,
-        ready_pids: Set[str],
+        ready_pids: list[tuple[int, float, str]],
         remaining_times: Dict[str, int]
     ) -> bool:
-        running_remaining_time: int = remaining_times[running_pid]
-        return any(
-            remaining_times[pid] < running_remaining_time
-            for pid in ready_pids
-        )
+        if not ready_pids:
+            return False
+        return ready_pids[0][0] < remaining_times[running_pid]
 
     @staticmethod
     def __select_next_pid(
-        ready_pids: Set[str],
-        remaining_times: Dict[str, int],
-        rng: Random
+        ready_pids: list[tuple[int, float, str]],
     ) -> str:
-        shortest_remaining_time: int = min(remaining_times[pid] for pid in ready_pids)
-        candidates: List[str] = sorted(
-            pid
-            for pid in ready_pids
-            if remaining_times[pid] == shortest_remaining_time
-        )
+        *_, next_pid = heapq.heappop(ready_pids)
+        return next_pid
 
-        return rng.choice(candidates)
-
-    @staticmethod
-    def __append_execution_step(
-        steps: List[SchedulingTimelineStepSchema],
-        pid: str,
-        start: int,
-        end: int
-    ) -> None:
-        if (
-            steps
-            and steps[-1].state == SchedulingTimelineStepState.RUNNING
-            and steps[-1].pid == pid
-            and steps[-1].end == start
-        ):
-            steps[-1] = SchedulingTimelineStepSchema(
-                state=SchedulingTimelineStepState.RUNNING,
-                pid=pid,
-                start=steps[-1].start,
-                end=end
-            )
-
-            return
-
-        steps.append(
-            SchedulingTimelineStepSchema(
-                state=SchedulingTimelineStepState.RUNNING,
-                pid=pid,
-                start=start,
-                end=end
-            )
-        )
