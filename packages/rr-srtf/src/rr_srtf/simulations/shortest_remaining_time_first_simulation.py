@@ -2,26 +2,39 @@ import heapq
 from random import Random
 from typing import Dict, List, Optional
 
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
+from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 from rr_srtf.simulations.base_simulation import BaseSimulation
+from rr_srtf.simulations.simulation_context import SimulationContext
+
 
 class ShortestRemainingTimeFirstSimulation(BaseSimulation):
     SEED: int = 0
 
     @classmethod
-    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingTimelineSchema]:
+    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingResultSchema]:
         if "SRTF" not in scheduling.metadata.algorithms:
             raise ValueError("Shortest Remaining Time First must be listed as one of the algorithms to be able to simulate")
 
-        return [
-            cls.__simulate_once(
-                context_switch_cost=scheduling.metadata.context_switch_cost,
-                processes=scheduling.workload.processes
-            )
-        ]
+        context: SimulationContext = SimulationContext(
+            processes=scheduling.workload.processes,
+            ctx_switch_cost=scheduling.metadata.context_switch_cost,
+            throughput_window=scheduling.metadata.throughput_window_T,
+            logger=RunContext.current().get_logger("SRTF")
+        )
+
+        timeline: SchedulingTimelineSchema = cls.__simulate_once(
+            context_switch_cost=scheduling.metadata.context_switch_cost,
+            processes=scheduling.workload.processes
+        )
+
+        metrics: SchedulingMetricsSchema = SchedulingAnalysis.get_scheduling_timelines_metrics(scheduling, [timeline])[0]
+
+        return [SchedulingResultSchema(final_context=context, timeline=timeline, metrics=metrics)]
 
     @classmethod
     def __simulate_once(cls, context_switch_cost: int, processes: List[SchedulingWorkloadProcessSchema]) -> SchedulingTimelineSchema:
@@ -123,3 +136,33 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         *_, next_pid = heapq.heappop(ready_pids)
         return next_pid
 
+    @staticmethod
+    def __append_execution_step(
+        steps: List[SchedulingTimelineStepSchema],
+        pid: str,
+        start: int,
+        end: int
+    ) -> None:
+        if (
+            steps
+            and steps[-1].type == SchedulingTimelineState.RUNNING
+            and steps[-1].ctx == pid
+            and steps[-1].end == start
+        ):
+            steps[-1] = SchedulingTimelineStepSchema(
+                type=SchedulingTimelineState.RUNNING,
+                ctx=pid,
+                start=steps[-1].start,
+                end=end
+            )
+
+            return
+
+        steps.append(
+            SchedulingTimelineStepSchema(
+                type=SchedulingTimelineState.RUNNING,
+                ctx=pid,
+                start=start,
+                end=end
+            )
+        )

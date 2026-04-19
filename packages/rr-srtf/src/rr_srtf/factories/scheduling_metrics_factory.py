@@ -15,7 +15,7 @@ class SchedulingMetricsFactory:
         n = len(context.completed)
         total_time = context.clock - 1
         cpu_busy = sum(p.burst_time for p in context.completed)
-        ctx_time = sum(1 for e in context.timeline if e.type == SchedulingTimelineState.SWITCHING)
+        ctx_time = sum(1 for e in context.entry_timeline if e.type == SchedulingTimelineState.SWITCHING)
 
         return SchedulingMetricsSchema(
             process=SchedulingProcessMetricsSchema(

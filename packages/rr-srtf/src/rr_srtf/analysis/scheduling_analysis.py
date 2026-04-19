@@ -1,7 +1,8 @@
 from collections import defaultdict
 from itertools import pairwise
 from typing import DefaultDict, Dict, List, Optional, Set
-from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
+
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
@@ -88,7 +89,7 @@ class SchedulingAnalysis:
     def __get_overhead_metrics(scheduling: SchedulingSchema, timeline: SchedulingTimelineSchema) -> SchedulingOverheadMetricsSchema:
         running_steps: List[SchedulingTimelineStepSchema] = SchedulingAnalysis.__get_running_steps(timeline)
         ctx_switch_count: int = sum(
-            previous_step.pid != current_step.pid
+            previous_step.ctx != current_step.ctx
             for previous_step, current_step in pairwise(running_steps)
         )
 
@@ -104,9 +105,9 @@ class SchedulingAnalysis:
         processes_by_pid: Set[str] = {process.pid for process in scheduling.workload.processes}
         steps_by_pid: DefaultDict[str, List[SchedulingTimelineStepSchema]] = defaultdict(list)
         for step in SchedulingAnalysis.__get_running_steps(timeline):
-            if step.pid not in processes_by_pid:
-                raise ValueError(f"unknown pid in timeline: {step.pid}")
-            steps_by_pid[step.pid].append(step)
+            if step.ctx not in processes_by_pid:
+                raise ValueError(f"unknown pid in timeline: {step.ctx}")
+            steps_by_pid[step.ctx].append(step)
         return dict(steps_by_pid)
 
     @staticmethod
@@ -114,5 +115,5 @@ class SchedulingAnalysis:
         return [
             step
             for step in timeline.steps
-            if step.state == SchedulingTimelineStepState.RUNNING
+            if step.type == SchedulingTimelineState.RUNNING
         ]

@@ -10,13 +10,13 @@ class SchedulingReportFactory:
         scheduling: SchedulingSchema,
         scheduling_timelines: List[SchedulingTimelineSchema],
         scheduling_metrics: List[SchedulingMetricsSchema],
-        figure_path: Path,
+        result_path: Path,
         source: Optional[Path] = None
     ) -> Dict[str, Any]:
         return {
             "source": str(source) if source is not None else "mock",
             "challenge_id": scheduling.challenge_id,
-            "figure_path": str(figure_path),
+            "result_path": str(result_path),
             "simulations": [
                 {
                     "timeline": timeline.model_dump(),

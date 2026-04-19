@@ -8,10 +8,11 @@ from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import 
 
 class SchedulingTimelineFactory:
     @classmethod
-    def compress_events(
+    def timeline_from_entries(
             cls,
             events: List[SchedulingTimelineEntrySchema],
-            detailed: bool = False
+            detailed: bool = False,
+            only_running: bool = True
     ) -> List[SchedulingTimelineStepSchema]:
         steps: List[SchedulingTimelineStepSchema] = []
         i = 0
@@ -20,8 +21,7 @@ class SchedulingTimelineFactory:
             ev: SchedulingTimelineEntrySchema = events[i]
 
             if not isinstance(ev.type, SchedulingTimelineState):
-                if detailed:
-                    steps.append(cls.__make_zero_cost_step(ev))
+                steps.extend([cls.__make_zero_cost_step(ev)] if detailed else [])
                 i += 1
                 continue
 
@@ -32,20 +32,22 @@ class SchedulingTimelineFactory:
                 cur: SchedulingTimelineEntrySchema = events[j]
                 if cur.type == ev.type and cur.ctx == ev.ctx:
                     last_tick_idx = j
-                elif isinstance(cur.type, SchedulingTimelineEvent) and detailed:
+                    j += 1
+                elif isinstance(cur.type, SchedulingTimelineEvent):
                     # Zero-cost event interspersed — skip it, don't break the merge
-                    inside_steps.append(cls.__make_zero_cost_step(cur))
+                    if detailed:
+                        inside_steps.append(cls.__make_zero_cost_step(cur))
+                    j += 1
                 else:
                     break
-                j += 1
-            steps.append(SchedulingTimelineStepSchema(
-                type=ev.type,
-                ctx=ev.ctx,
-                start=ev.time,
-                end=events[last_tick_idx].time + 1,
-            ))
-            if detailed:
-                steps.extend(inside_steps)
+            if not only_running or ev.type == SchedulingTimelineState.RUNNING:
+                steps.append(SchedulingTimelineStepSchema(
+                    type=ev.type,
+                    ctx=ev.ctx,
+                    start=ev.time,
+                    end=events[last_tick_idx].time + 1,
+                ))
+            steps.extend(inside_steps if detailed else [])
             i = j
 
         return steps

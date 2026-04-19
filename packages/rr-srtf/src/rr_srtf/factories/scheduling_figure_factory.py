@@ -13,6 +13,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
@@ -25,6 +26,7 @@ class SchedulingFigureFactory:
     ROW_HEIGHT: float = 1.0
     BAR_HEIGHT: float = 0.7
     IDLE_HATCH: str = "////"
+    SWITCH_HATCH: str = "\\\\\\\\"
 
     @staticmethod
     def plot(schedulings: List[Tuple[SchedulingSchema, List[SchedulingTimelineSchema]]]) -> Figure:
@@ -89,11 +91,11 @@ class SchedulingFigureFactory:
                     SchedulingFigureFactory.__plot_step(
                         ax=timeline_ax,
                         row_index=row_index,
-                        pid=step.pid,
+                        pid=step.ctx,
                         start=step.start,
                         end=step.end,
                         remaining_time=remaining_time,
-                        color=colors_by_pid.get(step.pid),
+                        color=colors_by_pid.get(step.ctx),
                     )
 
                 row_index += 1
@@ -217,8 +219,10 @@ class SchedulingFigureFactory:
 
         remaining_times_by_step: List[int] = []
         for step in scheduling_timeline.steps:
-            remaining_time_by_pid[step.pid] -= step.end - step.start
-            remaining_times_by_step.append(remaining_time_by_pid[step.pid])
+            if step.type != SchedulingTimelineState.RUNNING:
+                continue
+            remaining_time_by_pid[step.ctx] -= step.end - step.start
+            remaining_times_by_step.append(remaining_time_by_pid[step.ctx])
         return remaining_times_by_step
 
     @staticmethod
@@ -286,7 +290,7 @@ class SchedulingFigureFactory:
         if previous_end < max_time:
             idle_segments.append((previous_end, max_time))
 
-        for start, end in idle_segments:
+        for i, (start, end) in enumerate(idle_segments):
             ax.barh(
                 y=row_index,
                 width=end - start,
@@ -296,7 +300,7 @@ class SchedulingFigureFactory:
                 facecolor="#f8fafc",
                 edgecolor="#94a3b8",
                 linewidth=0.6,
-                hatch=SchedulingFigureFactory.IDLE_HATCH,
+                hatch=SchedulingFigureFactory.IDLE_HATCH if i == len(idle_segments) - 1 else SchedulingFigureFactory.SWITCH_HATCH,
                 zorder=0,
             )
 

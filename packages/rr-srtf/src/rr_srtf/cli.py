@@ -3,6 +3,9 @@ import typer
 from pathlib import Path
 from typing import List, Optional
 from pydantic import ValidationError
+
+from rr_srtf.context import RunContext
+from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
@@ -24,21 +27,26 @@ def main(
         resolve_path=True,
         help="Scheduling JSON file. Uses the mock workload when omitted.",
     ),
-    output_figure_path: Optional[Path] = typer.Option(
+    output_path: Optional[Path] = typer.Option(
         None,
-        "--output-figure",
+        "--output-dir",
         "-o",
-        dir_okay=False,
-        file_okay=True,
+        dir_okay=True,
+        file_okay=False,
         writable=True,
         resolve_path=True,
-        help="Path to save the generated figure.",
+        help="Directory to save the generated figure and logs.",
     ),
     show_figure: bool = typer.Option(
         True,
         "--show/--no-show",
         help="Open the generated figure in the default viewer.",
     ),
+    log: bool = typer.Option(
+        False,
+        "--log/--silent",
+        help="Show logs and generate their files.",
+    )
 ) -> None:
     try:
         scheduling: SchedulingSchema = SchedulingParseUtils.parse(input_path)
@@ -49,18 +57,18 @@ def main(
     except OSError as exc:
         raise typer.BadParameter(f"Could not read {input_path}: {exc}") from exc
 
-    scheduling_timelines: List[SchedulingTimelineSchema] = []
+    RunContext.new_run(scheduling.challenge_id, output_path, not log)
+    scheduling_results: List[SchedulingResultSchema] = []
+
     if "RR" in scheduling.metadata.algorithms:
-        scheduling_timelines.extend(RoundRobinSimulation.simulate(scheduling))
+        scheduling_results.extend(RoundRobinSimulation.simulate(scheduling))
     if "SRTF" in scheduling.metadata.algorithms:
-        scheduling_timelines.extend(ShortestRemainingTimeFirstSimulation.simulate(scheduling))
+        scheduling_results.extend(ShortestRemainingTimeFirstSimulation.simulate(scheduling))
 
-    scheduling_metrics: List[SchedulingMetricsSchema] = SchedulingAnalysis.get_scheduling_timelines_metrics(
-        scheduling,
-        scheduling_timelines,
-    )
+    scheduling_timelines: List[SchedulingTimelineSchema] = [r.timeline for r in scheduling_results]
+    scheduling_metrics: List[SchedulingMetricsSchema] = [r.metrics for r in scheduling_results]
 
-    figure_path: Path = FileUtils.get_figure_path(scheduling.challenge_id, output_figure_path)
+    figure_path: Path = RunContext.current().figure_file
     FigureUtils.save_scheduling_figure(
         scheduling=scheduling,
         scheduling_timelines=scheduling_timelines,
@@ -71,7 +79,7 @@ def main(
         scheduling=scheduling,
         scheduling_timelines=scheduling_timelines,
         scheduling_metrics=scheduling_metrics,
-        figure_path=figure_path,
+        result_path=RunContext.current().run_path,
         source=input_path,
     )
 

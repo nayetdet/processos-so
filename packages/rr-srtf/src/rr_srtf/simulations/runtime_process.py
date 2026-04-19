@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 
@@ -46,5 +45,3 @@ class RuntimeProcess:
         self.finish_time = clock
         self.turnaround_time = clock - self.arrival_time
         self.waiting_time = (clock - self.arrival_time) - self.burst_time
-
-

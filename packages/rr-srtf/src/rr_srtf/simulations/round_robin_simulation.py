@@ -1,9 +1,11 @@
 from typing import List
 
+from rr_srtf.context import RunContext
 from rr_srtf.enums.scheduling_timeline_event import SchedulingTimelineEvent
 from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.factories.scheduling_metrics_factory import SchedulingMetricsFactory
 from rr_srtf.factories.scheduling_timeline_factory import SchedulingTimelineFactory
+from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_entry_schema import SchedulingTimelineEntrySchema
@@ -15,33 +17,35 @@ from rr_srtf.simulations.simulation_context import SimulationContext
 
 class RoundRobinSimulation(BaseSimulation):
     @classmethod
-    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingTimelineSchema]:
+    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingResultSchema]:
         if "RR" not in scheduling.metadata.algorithms:
             raise ValueError('Round Robin must be listed as one of the algorithms to be able to simulate')
 
-        timelines: list[SchedulingTimelineSchema] = []
+        results: list[SchedulingResultSchema] = []
         for q in scheduling.metadata.rr_quantums or []:
             context: SimulationContext = SimulationContext(
                 processes=scheduling.workload.processes,
                 quantum=q,
                 ctx_switch_cost=scheduling.metadata.context_switch_cost,
-                throughput_window=scheduling.metadata.throughput_window_T
+                throughput_window=scheduling.metadata.throughput_window_T,
+                logger=RunContext.current().get_logger("RR", f"q{q}")
             )
             metrics: SchedulingMetricsSchema = cls.__simulate_once(context)
-            timelines.append(SchedulingTimelineSchema(
+            timeline: SchedulingTimelineSchema = SchedulingTimelineSchema(
                 algorithm="RR",
                 quantum=q,
-                steps=SchedulingTimelineFactory.compress_events(context.timeline)
-            ))
+                steps=SchedulingTimelineFactory.timeline_from_entries(context.entry_timeline)
+            )
+            results.append(SchedulingResultSchema(final_context=context, metrics=metrics, timeline=timeline))
 
-        return timelines
+        return results
 
     @classmethod
     def __simulate_once(cls, context: SimulationContext) -> SchedulingMetricsSchema:
-        print("=" * 60)
-        print(f"Round Robin Scheduler  |  quantum={context.quantum}  ctx_switch_cost={context.ctx_switch_cost}")
-        print(f"Processes: {[(p.pid, p.arrival_time, p.burst_time) for p in context.processes]}")
-        print("=" * 60)
+        context.logger.info("=" * 60)
+        context.logger.info(f"Round Robin Scheduler  |  quantum={context.quantum}  ctx_switch_cost={context.ctx_switch_cost}")
+        context.logger.info(f"Processes: {[(p.pid, p.arrival_time, p.burst_time) for p in context.processes]}")
+        context.logger.info("=" * 60)
 
         while context.next_arrival < len(context.processes) or context.ready_queue or context.current is not None:
             context.begin_tick()
@@ -88,7 +92,8 @@ class RoundRobinSimulation(BaseSimulation):
                 # Same process re-scheduled — no context switch needed, restart quantum
                 context.inner_clock = context.quantum
 
-            elif context.ongoing_event == SchedulingTimelineEvent.FINISH and not context.ctx_switch_on_finish:
+            elif (context.ongoing_event == SchedulingTimelineEvent.FINISH and not context.ctx_switch_on_finish) or (
+                    context.ongoing_event == SchedulingTimelineState.IDLE and context.instant_start):
                 # Previous process finished and cost_on_finish is off — skip switch penalty.
                 context.inner_clock = context.quantum
                 context.ongoing_event = SchedulingTimelineEvent.DISPATCH
@@ -130,7 +135,7 @@ class RoundRobinSimulation(BaseSimulation):
             type=SchedulingTimelineState.RUNNING,
             ctx=context.current.pid,
             detail=(
-                f"{f'(q={context.inner_clock + 1} → {context.inner_clock})':<13}  "
+                f"{f'(q={context.inner_clock + 1} → {context.inner_clock})':<13} "
                 f"{f'(r={context.current.remaining_time + 1} → {context.current.remaining_time})':<13}"
             ),
         ))
