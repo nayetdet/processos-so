@@ -1,3 +1,4 @@
+from collections import deque
 from typing import List
 
 from rr_srtf.context import RunContext
@@ -25,12 +26,11 @@ class RoundRobinSimulation(BaseSimulation):
         for q in scheduling.metadata.rr_quantums or []:
             context: SimulationContext = SimulationContext(
                 processes=scheduling.workload.processes,
-                quantum=q,
                 ctx_switch_cost=scheduling.metadata.context_switch_cost,
                 throughput_window=scheduling.metadata.throughput_window_T,
                 logger=RunContext.current().get_logger("RR", f"q{q}")
             )
-            metrics: SchedulingMetricsSchema = cls.__simulate_once(context)
+            metrics: SchedulingMetricsSchema = cls.__simulate_once(context, q)
             timeline: SchedulingTimelineSchema = SchedulingTimelineSchema(
                 algorithm="RR",
                 quantum=q,
@@ -41,24 +41,21 @@ class RoundRobinSimulation(BaseSimulation):
         return results
 
     @classmethod
-    def __simulate_once(cls, context: SimulationContext) -> SchedulingMetricsSchema:
-        context.logger.info("=" * 60)
-        context.logger.info(f"Round Robin Scheduler  |  quantum={context.quantum}  ctx_switch_cost={context.ctx_switch_cost}")
-        context.logger.info(f"Processes: {[(p.pid, p.arrival_time, p.burst_time) for p in context.processes]}")
-        context.logger.info("=" * 60)
+    def __simulate_once(cls, context: SimulationContext, quantum: int) -> SchedulingMetricsSchema:
+        context.flush_log_header(f"Round Robin Scheduler  |  quantum={quantum}  ctx_switch_cost={context.ctx_switch_cost}")
 
-        while context.next_arrival < len(context.processes) or context.ready_queue or context.current is not None:
+        ready_queue: deque[RuntimeProcess] = deque()
+
+        while context.next_arrival < context.nb_processes or ready_queue or context.current is not None:
             context.begin_tick()
-            # ARRIVE
-            cls.__handle_arrivals(context)
 
-            # RUNNING
+            cls.__handle_arrivals(context, ready_queue)
+
             if context.ongoing_event != SchedulingTimelineState.SWITCHING:
-                cls.__handle_running(context)
+                cls.__handle_running(context, ready_queue, quantum)
 
-            # CTX_SWITCH
             if context.ongoing_event == SchedulingTimelineState.SWITCHING and context.current is not None:
-                cls.__handle_ctx_switch(context)
+                cls.__handle_ctx_switch(context, quantum)
 
             context.flush_tick()
             context.tick_clock()
@@ -67,35 +64,35 @@ class RoundRobinSimulation(BaseSimulation):
 
         return SchedulingMetricsFactory.calc_metrics(context)
 
-    @classmethod
-    def __handle_arrivals(cls, context: SimulationContext) -> None:
-        while context.next_arrival < len(context.processes) and context.processes[
+    @staticmethod
+    def __handle_arrivals(context: SimulationContext, ready_queue: deque[RuntimeProcess]) -> None:
+        while context.next_arrival < context.nb_processes and context.processes[
             context.next_arrival].arrival_time == context.clock:
             p = RuntimeProcess.from_schema(context.processes[context.next_arrival])
-            context.ready_queue.append(p)
-            context.add_event(
+            ready_queue.append(p)
+            context.add_timeline_entry(
                 SchedulingTimelineEntrySchema(time=context.clock, type=SchedulingTimelineEvent.ARRIVE, ctx=p.pid))
             context.next_arrival += 1
 
-    @classmethod
-    def __should_skip_running(cls, context: SimulationContext) -> bool:
+    @staticmethod
+    def __should_skip_running(context: SimulationContext, ready_queue: deque[RuntimeProcess], quantum: int) -> bool:
         # No process running and empty queue -> wait for next arrival
-        if context.current is None and not context.ready_queue:
-            context.add_event(SchedulingTimelineEntrySchema(time=context.clock, type=SchedulingTimelineState.IDLE))
+        if context.current is None and not ready_queue:
+            context.add_timeline_entry(SchedulingTimelineEntrySchema(time=context.clock, type=SchedulingTimelineState.IDLE))
             return True
 
         # The queue has processes but none is running -> start switching to the next process
         if context.current is None:
-            context.current = context.ready_queue.popleft()
+            context.current = ready_queue.popleft()
 
             if context.last_pid == context.current.pid:
                 # Same process re-scheduled — no context switch needed, restart quantum
-                context.inner_clock = context.quantum
+                context.inner_clock = quantum
 
             elif (context.ongoing_event == SchedulingTimelineEvent.FINISH and not context.ctx_switch_on_finish) or (
                     context.ongoing_event == SchedulingTimelineState.IDLE and context.instant_start):
                 # Previous process finished and cost_on_finish is off — skip switch penalty.
-                context.inner_clock = context.quantum
+                context.inner_clock = quantum
                 context.ongoing_event = SchedulingTimelineEvent.DISPATCH
 
             else:
@@ -105,8 +102,8 @@ class RoundRobinSimulation(BaseSimulation):
 
         return False
 
-    @classmethod
-    def __dispatch_if_needed(cls, context: SimulationContext) -> None:
+    @staticmethod
+    def __dispatch_if_needed(context: SimulationContext) -> None:
         if context.ongoing_event != SchedulingTimelineEvent.DISPATCH:
             return
         context.ongoing_event = SchedulingTimelineState.RUNNING
@@ -114,13 +111,13 @@ class RoundRobinSimulation(BaseSimulation):
             if not context.current.has_responded:
                 context.current.start_time = context.clock
                 context.current.response_time = context.current.start_time - context.current.arrival_time
-            context.add_event(SchedulingTimelineEntrySchema(
+            context.add_timeline_entry(SchedulingTimelineEntrySchema(
                 time=context.clock, type=SchedulingTimelineEvent.DISPATCH, ctx=context.current.pid,
             ))
 
     @classmethod
-    def __handle_running(cls, context: SimulationContext) -> None:
-        if cls.__should_skip_running(context) or context.current is None:
+    def __handle_running(cls, context: SimulationContext, ready_queue: deque[RuntimeProcess], quantum: int) -> None:
+        if cls.__should_skip_running(context, ready_queue, quantum) or context.current is None:
             return
 
         cls.__dispatch_if_needed(context)
@@ -130,7 +127,7 @@ class RoundRobinSimulation(BaseSimulation):
 
         context.inner_clock -= 1
         context.current.remaining_time -= 1
-        context.add_event(SchedulingTimelineEntrySchema(
+        context.add_timeline_entry(SchedulingTimelineEntrySchema(
             time=context.clock,
             type=SchedulingTimelineState.RUNNING,
             ctx=context.current.pid,
@@ -143,41 +140,41 @@ class RoundRobinSimulation(BaseSimulation):
         if context.current.remaining_time == 0:
             cls.__handle_finish(context)
         elif context.inner_clock == 0:
-            cls.__handle_preempt(context)
+            cls.__handle_preempt(context, ready_queue)
 
-    @classmethod
-    def __handle_preempt(cls, context: SimulationContext) -> None:
+    @staticmethod
+    def __handle_preempt(context: SimulationContext, ready_queue: deque[RuntimeProcess]) -> None:
         if context.current is None:
             return
 
-        context.add_event(SchedulingTimelineEntrySchema(
+        context.add_timeline_entry(SchedulingTimelineEntrySchema(
             time=context.clock,
             type=SchedulingTimelineEvent.PREEMPT,
             ctx=context.current.pid,
             detail=f"(r={context.current.remaining_time})",
         ))
         context.last_pid = context.current.pid
-        context.ready_queue.append(context.current)
+        ready_queue.append(context.current)
         context.current = None
 
-    @classmethod
-    def __handle_finish(cls, context: SimulationContext) -> None:
+    @staticmethod
+    def __handle_finish(context: SimulationContext) -> None:
         if context.current is None:
             return
         context.current.mark_completed(context.clock)
         context.completed.append(context.current)
-        context.add_event(SchedulingTimelineEntrySchema(
+        context.add_timeline_entry(SchedulingTimelineEntrySchema(
             time=context.clock, type=SchedulingTimelineEvent.FINISH, ctx=context.current.pid,
         ))
         context.last_pid = context.current.pid
         context.ongoing_event = SchedulingTimelineEvent.FINISH
         context.current = None
 
-    @classmethod
-    def __handle_ctx_switch(cls, context: SimulationContext) -> None:
+    @staticmethod
+    def __handle_ctx_switch(context: SimulationContext, quantum: int) -> None:
         if context.inner_clock > 0:
             context.inner_clock -= 1
-            context.add_event(SchedulingTimelineEntrySchema(
+            context.add_timeline_entry(SchedulingTimelineEntrySchema(
                 time=context.clock,
                 type=SchedulingTimelineState.SWITCHING,
                 ctx=f"{context.last_pid} → {context.current.pid}",
@@ -185,5 +182,5 @@ class RoundRobinSimulation(BaseSimulation):
             ))
 
         if context.inner_clock == 0:
-            context.inner_clock = context.quantum
+            context.inner_clock = quantum
             context.ongoing_event = SchedulingTimelineEvent.DISPATCH
