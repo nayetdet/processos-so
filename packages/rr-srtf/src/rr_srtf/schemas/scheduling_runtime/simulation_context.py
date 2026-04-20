@@ -23,6 +23,8 @@ class SimulationContext:
             self.logger.debug(self.timeline.flush_parts())
             if not self.state.finished:
                 self.state.tick_clock()
+            else:
+                self.logger.debug("")
 
     def flush_log_header(self, message: str) -> None:
         self.logger.info("=" * 60)

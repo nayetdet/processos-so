@@ -298,9 +298,9 @@ class SchedulingFigureFactory:
                 height=SchedulingFigureFactory.BAR_HEIGHT,
                 align="center",
                 facecolor="#f8fafc",
-                edgecolor="#94a3b8",
+                edgecolor="#94a3b8" if start == 0 or i == len(idle_segments) - 1 else "#b8a694",
                 linewidth=0.6,
-                hatch=SchedulingFigureFactory.IDLE_HATCH if i == len(idle_segments) - 1 else SchedulingFigureFactory.SWITCH_HATCH,
+                hatch=SchedulingFigureFactory.IDLE_HATCH if start == 0 or i == len(idle_segments) - 1 else SchedulingFigureFactory.SWITCH_HATCH,
                 zorder=0,
             )
 
