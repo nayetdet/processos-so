@@ -4,17 +4,15 @@ from pathlib import Path
 from typing import List, Optional
 from pydantic import ValidationError
 
-from rr_srtf.context import RunContext
+from rr_srtf.schemas.scheduling_runtime.run_context import RunContext
 from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
-from rr_srtf.analysis.scheduling_analysis import SchedulingAnalysis
 from rr_srtf.factories.scheduling_report_factory import SchedulingReportFactory
 from rr_srtf.simulations.round_robin_simulation import RoundRobinSimulation
 from rr_srtf.simulations.shortest_remaining_time_first_simulation import ShortestRemainingTimeFirstSimulation
 from rr_srtf.utils.figure_utils import FigureUtils
-from rr_srtf.utils.file_utils import FileUtils
 from rr_srtf.utils.scheduling_parse_utils import SchedulingParseUtils
 
 def main(

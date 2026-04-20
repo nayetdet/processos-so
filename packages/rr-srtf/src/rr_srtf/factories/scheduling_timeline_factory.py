@@ -11,8 +11,7 @@ class SchedulingTimelineFactory:
     def timeline_from_entries(
             cls,
             events: List[SchedulingTimelineEntrySchema],
-            detailed: bool = False,
-            only_running: bool = True
+            detailed: bool = False
     ) -> List[SchedulingTimelineStepSchema]:
         steps: List[SchedulingTimelineStepSchema] = []
         i = 0
@@ -35,12 +34,11 @@ class SchedulingTimelineFactory:
                     j += 1
                 elif isinstance(cur.type, SchedulingTimelineEvent):
                     # Zero-cost event interspersed — skip it, don't break the merge
-                    if detailed:
-                        inside_steps.append(cls.__make_zero_cost_step(cur))
+                    inside_steps.extend([cls.__make_zero_cost_step(cur)] if detailed else [])
                     j += 1
                 else:
                     break
-            if not only_running or ev.type == SchedulingTimelineState.RUNNING:
+            if detailed or ev.type == SchedulingTimelineState.RUNNING:
                 steps.append(SchedulingTimelineStepSchema(
                     type=ev.type,
                     ctx=ev.ctx,

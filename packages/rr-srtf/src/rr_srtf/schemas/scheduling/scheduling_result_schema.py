@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict
 
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
-from rr_srtf.simulations.simulation_context import SimulationContext
+from rr_srtf.schemas.scheduling_runtime.simulation_context import SimulationContext
 
 
 class SchedulingResultSchema(BaseModel):

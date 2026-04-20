@@ -14,7 +14,7 @@ class BaseSimulation(ABC):
         pass
 
     @staticmethod
-    def __append_execution_step(
+    def _append_execution_step(
             steps: List[SchedulingTimelineStepSchema],
             pid: str,
             start: int,
