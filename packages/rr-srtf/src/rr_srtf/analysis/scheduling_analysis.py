@@ -12,6 +12,42 @@ from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import Sched
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 
 class SchedulingAnalysis:
+    @staticmethod
+    def get_scheduling_metrics(
+        scheduling: SchedulingSchema,
+        start_times: Dict[str, int],
+        finish_times: Dict[str, int],
+        total_time: int,
+        ctx_switch_count: int
+    ) -> SchedulingMetricsSchema:
+        processes: list[SchedulingWorkloadProcessSchema] = scheduling.workload.processes
+        n: int = len(processes)
+        cpu_busy: int = sum(p.burst_time for p in processes)
+
+        return SchedulingMetricsSchema(
+            process=SchedulingProcessMetricsSchema(
+                avg_turnaround_time=sum((finish_times[p.pid] - p.arrival_time) for p in processes) / n,
+                avg_waiting_time=sum(((finish_times[p.pid] - p.arrival_time) - p.burst_time) for p in processes) / n,
+                avg_response_time=sum((start_times[p.pid] - p.arrival_time) for p in processes) / n
+            ),
+            performance=SchedulingPerformanceMetricsSchema(
+                total_time=total_time,
+                busy_time=cpu_busy,
+                utilization=round(cpu_busy / total_time * 100 if total_time else 0, 2),
+                throughput_at_window=
+                round(sum(1 for p in processes if
+                       finish_times[p.pid] <=
+                       scheduling.metadata.throughput_window_T) / scheduling.metadata.throughput_window_T,
+                   4),
+                throughput_overall=round(n / total_time, 4) if total_time else 0
+            ),
+            overhead=SchedulingOverheadMetricsSchema(
+                ctx_switch_count=ctx_switch_count,
+                ctx_switch_time=ctx_switch_count*scheduling.metadata.context_switch_cost,
+                scheduler=ctx_switch_count*scheduling.metadata.context_switch_cost
+            )
+        )
+
     @classmethod
     def get_scheduling_timelines_metrics(cls, scheduling: SchedulingSchema, scheduling_timelines: List[SchedulingTimelineSchema]) -> List[SchedulingMetricsSchema]:
         if not scheduling_timelines:

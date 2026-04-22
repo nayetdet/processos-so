@@ -2,15 +2,15 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
+from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
-from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 
 
 class BaseSimulation(ABC):
     @classmethod
     @abstractmethod
-    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingTimelineSchema]:
+    def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingResultSchema]:
         pass
 
     @staticmethod

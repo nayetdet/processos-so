@@ -3,6 +3,8 @@ import typer
 from pathlib import Path
 from typing import List, Optional
 from pydantic import ValidationError
+
+from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
@@ -49,28 +51,23 @@ def main(
     except OSError as exc:
         raise typer.BadParameter(f"Could not read {input_path}: {exc}") from exc
 
-    scheduling_timelines: List[SchedulingTimelineSchema] = []
+    scheduling_results: List[SchedulingResultSchema] = []
     if "RR" in scheduling.metadata.algorithms:
-        scheduling_timelines.extend(RoundRobinSimulation.simulate(scheduling))
+        scheduling_results.extend(RoundRobinSimulation.simulate(scheduling))
     if "SRTF" in scheduling.metadata.algorithms:
-        scheduling_timelines.extend(ShortestRemainingTimeFirstSimulation.simulate(scheduling))
-
-    scheduling_metrics: List[SchedulingMetricsSchema] = SchedulingAnalysis.get_scheduling_timelines_metrics(
-        scheduling,
-        scheduling_timelines,
-    )
+        scheduling_results.extend(ShortestRemainingTimeFirstSimulation.simulate(scheduling))
 
     figure_path: Path = FileUtils.get_figure_path(scheduling.challenge_id, output_figure_path)
     FigureUtils.save_scheduling_figure(
         scheduling=scheduling,
-        scheduling_timelines=scheduling_timelines,
+        scheduling_timelines=[sr.timeline for sr in scheduling_results],
         figure_path=figure_path
     )
 
     report = SchedulingReportFactory.build(
         scheduling=scheduling,
-        scheduling_timelines=scheduling_timelines,
-        scheduling_metrics=scheduling_metrics,
+        scheduling_timelines=[sr.timeline for sr in scheduling_results],
+        scheduling_metrics=[sr.metrics for sr in scheduling_results],
         figure_path=figure_path,
         source=input_path,
     )
