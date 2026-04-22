@@ -1,7 +1,7 @@
 from collections import defaultdict
 from itertools import pairwise
 from typing import DefaultDict, Dict, List, Optional, Set
-from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_metrics.scheduling_metrics import SchedulingMetricsSchema
@@ -150,5 +150,5 @@ class SchedulingAnalysis:
         return [
             step
             for step in timeline.steps
-            if step.state == SchedulingTimelineStepState.RUNNING
+            if step.state == SchedulingTimelineState.RUNNING
         ]

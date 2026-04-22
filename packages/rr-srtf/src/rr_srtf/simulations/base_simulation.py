@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from rr_srtf.enums.scheduling_timeline_step_state import SchedulingTimelineStepState
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
@@ -22,12 +22,12 @@ class BaseSimulation(ABC):
     ) -> None:
         if (
                 steps
-                and steps[-1].state == SchedulingTimelineStepState.RUNNING
+                and steps[-1].state == SchedulingTimelineState.RUNNING
                 and steps[-1].pid == pid
                 and steps[-1].end == start
         ):
             steps[-1] = SchedulingTimelineStepSchema(
-                state=SchedulingTimelineStepState.RUNNING,
+                state=SchedulingTimelineState.RUNNING,
                 pid=pid,
                 start=steps[-1].start,
                 end=end
@@ -37,7 +37,7 @@ class BaseSimulation(ABC):
 
         steps.append(
             SchedulingTimelineStepSchema(
-                state=SchedulingTimelineStepState.RUNNING,
+                state=SchedulingTimelineState.RUNNING,
                 pid=pid,
                 start=start,
                 end=end
