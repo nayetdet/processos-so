@@ -54,7 +54,7 @@ class BaseSimulation(ABC):
         detail: str = ""
     ) -> str:
         event_pid: str = f"{event.value:<8}   [{pid}]" if pid != "" else f"{event.value}"
-        return f"{f"{event_pid:<16}  {"" if detail == "" else f'{detail}'}":<55}"
+        return f"{f"{event_pid:<16}  {"" if detail == "" else f'{detail}'}":<45}"
 
     @staticmethod
     def _flush_log_header(logger: Logger, message: str, processes: List[SchedulingWorkloadProcessSchema]) -> None:

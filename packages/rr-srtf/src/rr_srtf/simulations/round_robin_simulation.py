@@ -33,15 +33,19 @@ class RoundRobinSimulation(BaseSimulation):
         processes: List[SchedulingWorkloadProcessSchema] = scheduling.workload.processes
         steps: List[SchedulingTimelineStepSchema] = []
         log_parts: list[str]
+
         remaining_times: Dict[str, int] = {p.pid: p.burst_time for p in processes}
         start_times: Dict[str, int] = {p.pid: -1 for p in processes}
         finish_times: Dict[str, int] = {p.pid: -1 for p in processes}
 
         time: int = 0
-        ready_pids: deque[str] = deque()
         next_arrival: int = 0
+        running_pid: Optional[str] = None
         last_pid: Optional[str] = None
         ctx_switch_count: int = 0
+        switch_remaining: int = 0
+        ready_pids: deque[str] = deque()
+        q_remaining: int = 0
 
         logger: Logger = RunContext.current().get_logger(alg_name="RR", label=f'q{quantum}')
         cls._flush_log_header(
@@ -50,7 +54,7 @@ class RoundRobinSimulation(BaseSimulation):
             processes=processes
         )
 
-        while ready_pids or next_arrival < len(processes):
+        while ready_pids or running_pid is not None or next_arrival < len(processes):
             log_parts = [f"[{time:03}]"]
             next_arrival = cls.__enqueue_arrived_processes(
                 time=time,
@@ -60,88 +64,73 @@ class RoundRobinSimulation(BaseSimulation):
                 log_parts=log_parts
             )
 
-            if not ready_pids:
-                for _ in range(processes[next_arrival].arrival_time-time):
-                    log_parts.append(cls._get_log_part(
-                        event=SchedulingTimelineState.IDLE
-                    ))
-                    cls._flush_log_parts(logger=logger, parts=log_parts)
-                    time += 1
-                    log_parts = [f"[{time:03}]"]
-                last_pid = None
+            if switch_remaining > 0:
+                log_parts.append(cls._get_log_part(
+                    event=SchedulingTimelineState.SWITCHING,
+                    detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
+                ))
+                switch_remaining -= 1
+                time += 1
+                cls._flush_log_parts(logger=logger, parts=log_parts)
                 continue
 
-            running_pid: str = ready_pids.popleft()
-            if last_pid is not None and last_pid != running_pid:
-                for i in range(ctx_switch_cost):
-                    next_arrival = cls.__enqueue_arrived_processes(
-                        time=time,
-                        ready_pids=ready_pids,
-                        processes=processes,
-                        next_arrival=next_arrival,
-                        log_parts=log_parts
-                    )
-                    log_parts.append(cls._get_log_part(
-                        event=SchedulingTimelineState.SWITCHING,
-                        detail=f"{f'(t={ctx_switch_cost - i} → {ctx_switch_cost - i - 1})':<13}"
-                    ))
-                    cls._flush_log_parts(logger=logger, parts=log_parts)
+            if running_pid is None:
+                if not ready_pids:
+                    log_parts.append(cls._get_log_part(event=SchedulingTimelineState.IDLE))
                     time += 1
-                    log_parts = [f"[{time:03}]"]
-                ctx_switch_count += 1
+                    last_pid = None
+                    cls._flush_log_parts(logger=logger, parts=log_parts)
+                    continue
 
-            if last_pid != running_pid:
-                log_parts.append(cls._get_log_part(
-                    event=SchedulingTimelineEvent.DISPATCH,
-                    pid=running_pid,
-                ))
-                if start_times[running_pid] == -1:
-                    start_times[running_pid] = time
+                if last_pid is not None and last_pid != ready_pids[0]:
+                    if ctx_switch_cost > 0:
+                        switch_remaining = ctx_switch_cost
+                        ctx_switch_count += 1
+                        last_pid = None
+                        continue
+                    last_pid = None
 
-            runtime: int = min(quantum, remaining_times[running_pid])
+                running_pid = ready_pids.popleft()
+                q_remaining = quantum
+                if last_pid != running_pid:
+                    if start_times[running_pid] == -1:
+                        start_times[running_pid] = time
+                    log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
+
             cls._append_execution_step(
                 steps=steps,
                 pid=running_pid,
                 start=time,
-                end=time + runtime
+                end=time + 1
             )
 
-            for i in range(runtime):
-                next_arrival = cls.__enqueue_arrived_processes(
-                    time=time,
-                    ready_pids=ready_pids,
-                    processes=processes,
-                    next_arrival=next_arrival,
-                    log_parts=log_parts
+            log_parts.append(cls._get_log_part(
+                event=SchedulingTimelineState.RUNNING,
+                pid=running_pid,
+                detail=(
+                    f"{f'(q={q_remaining} → {q_remaining - 1})':<13} "
+                    f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
                 )
-                log_parts.append(cls._get_log_part(
-                    event=SchedulingTimelineState.RUNNING,
-                    pid=running_pid,
-                    detail=(
-                        f"{f'(q={quantum - i} → {quantum - i - 1})':<13} "
-                        f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
-                    )
-                ))
-                remaining_times[running_pid] -= 1
-                time += 1
-                if i != runtime-1:
-                    cls._flush_log_parts(logger=logger, parts=log_parts)
-                    log_parts = [f"[{time:03}]"]
-            last_pid = running_pid
+            ))
 
-            if remaining_times[running_pid] > 0:
+            remaining_times[running_pid] -= 1
+            q_remaining -= 1
+            time += 1
+
+            if remaining_times[running_pid] == 0:
+                log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
+                finish_times[running_pid] = time
+                last_pid = running_pid
+                running_pid = None
+            elif q_remaining == 0:
                 log_parts.append(cls._get_log_part(
                     event=SchedulingTimelineEvent.PREEMPT,
                     pid=running_pid,
                     detail=f"(r={remaining_times[running_pid]})"
                 ))
                 ready_pids.append(running_pid)
-            else:
-                log_parts.append(cls._get_log_part(
-                    event=SchedulingTimelineEvent.FINISH,
-                    pid=running_pid
-                ))
-                finish_times[running_pid] = time
+                last_pid = running_pid
+                running_pid = None
 
             cls._flush_log_parts(logger=logger, parts=log_parts)
 
@@ -165,17 +154,14 @@ class RoundRobinSimulation(BaseSimulation):
     @classmethod
     def __enqueue_arrived_processes(
         cls,
+        log_parts: list[str],
         time: int,
         processes: List[SchedulingWorkloadProcessSchema],
         ready_pids: deque[str],
         next_arrival: int,
-        log_parts: list[str]
     ) -> int:
-        while next_arrival < len(processes) and processes[next_arrival].arrival_time <= time:
+        while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
             ready_pids.append(processes[next_arrival].pid)
-            log_parts.append(cls._get_log_part(
-                event=SchedulingTimelineEvent.ARRIVE,
-                pid=processes[next_arrival].pid
-            ))
+            log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
             next_arrival += 1
         return next_arrival

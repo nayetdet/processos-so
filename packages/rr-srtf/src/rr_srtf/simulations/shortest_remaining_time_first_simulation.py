@@ -32,17 +32,20 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         processes: List[SchedulingWorkloadProcessSchema] = scheduling.workload.processes
         steps: List[SchedulingTimelineStepSchema] = []
         log_parts: list[str]
+
         remaining_times: Dict[str, int] = {p.pid: p.burst_time for p in processes}
         start_times: Dict[str, int] = {p.pid: -1 for p in processes}
         finish_times: Dict[str, int] = {p.pid: -1 for p in processes}
 
-        rng: Random = Random(cls.SEED)
         time: int = 0
         next_arrival: int = 0
-        ready_pids: list[tuple[int, float, str]] = []
+
         running_pid: Optional[str] = None
         last_pid: Optional[str] = None
         ctx_switch_count: int = 0
+        switch_remaining: int = 0
+        ready_pids: list[tuple[int, float, str]] = []
+        rng: Random = Random(cls.SEED)
 
         logger: Logger = RunContext.current().get_logger(alg_name="SRTF")
         cls._flush_log_header(
@@ -63,6 +66,16 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 rng=rng
             )
 
+            if switch_remaining > 0:
+                log_parts.append(cls._get_log_part(
+                    event=SchedulingTimelineState.SWITCHING,
+                    detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
+                ))
+                switch_remaining -= 1
+                time += 1
+                cls._flush_log_parts(logger=logger, parts=log_parts)
+                continue
+
             if running_pid is not None and cls.__should_preempt(
                 running_pid=running_pid,
                 ready_pids=ready_pids,
@@ -79,48 +92,25 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
 
             if running_pid is None:
                 if not ready_pids:
-                    for _ in range(processes[next_arrival].arrival_time - time):
-                        log_parts.append(cls._get_log_part(
-                            event=SchedulingTimelineState.IDLE
-                        ))
-                        cls._flush_log_parts(logger=logger, parts=log_parts)
-                        time += 1
-                        log_parts = [f"[{time:03}]"]
+                    log_parts.append(cls._get_log_part(event=SchedulingTimelineState.IDLE))
+                    time += 1
                     last_pid = None
+                    cls._flush_log_parts(logger=logger, parts=log_parts)
                     continue
 
                 if last_pid is not None and last_pid != ready_pids[0][2]:
                     if ctx_switch_cost > 0:
-                        for i in range(ctx_switch_cost):
-                            next_arrival = cls.__enqueue_arrived_processes(
-                                time=time,
-                                log_parts=log_parts,
-                                processes=processes,
-                                ready_pids=ready_pids,
-                                remaining_times=remaining_times,
-                                next_arrival=next_arrival,
-                                rng=rng
-                            )
-                            log_parts.append(cls._get_log_part(
-                                event=SchedulingTimelineState.SWITCHING,
-                                detail=f"{f'(t={ctx_switch_cost - i} → {ctx_switch_cost - i - 1})':<13}"
-                            ))
-                            cls._flush_log_parts(logger=logger, parts=log_parts)
-                            time += 1
-                            log_parts = [f"[{time:03}]"]
+                        switch_remaining = ctx_switch_cost
                         ctx_switch_count += 1
                         last_pid = None
                         continue
                     last_pid = None
 
                 running_pid = cls.__select_next_pid(ready_pids=ready_pids)
-                if start_times[running_pid] == -1:
-                    start_times[running_pid] = time
-
-                log_parts.append(cls._get_log_part(
-                    event=SchedulingTimelineEvent.DISPATCH,
-                    pid=running_pid
-                ))
+                if last_pid != running_pid:
+                    if start_times[running_pid] == -1:
+                        start_times[running_pid] = time
+                    log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
 
             cls._append_execution_step(
                 steps=steps,
@@ -139,10 +129,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
             time += 1
 
             if remaining_times[running_pid] == 0:
-                log_parts.append(cls._get_log_part(
-                    event=SchedulingTimelineEvent.FINISH,
-                    pid=running_pid
-                ))
+                log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
                 finish_times[running_pid] = time
                 last_pid = running_pid
                 running_pid = None
@@ -176,13 +163,10 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         next_arrival: int,
         rng: Random
     ) -> int:
-        while next_arrival < len(processes) and processes[next_arrival].arrival_time <= time:
+        while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
             pid: str = processes[next_arrival].pid
             heapq.heappush(ready_pids, (remaining_times[pid], rng.random(), pid))
-            log_parts.append(cls._get_log_part(
-                event=SchedulingTimelineEvent.ARRIVE,
-                pid=processes[next_arrival].pid
-            ))
+            log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
             next_arrival += 1
         return next_arrival
 
