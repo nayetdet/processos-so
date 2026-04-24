@@ -12,6 +12,7 @@ from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import Schedu
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 from rr_srtf.simulations.base_simulation import BaseSimulation
+from rr_srtf.utils.logging_utils import LoggingUtils
 
 class RoundRobinSimulation(BaseSimulation):
     @classmethod
@@ -48,38 +49,41 @@ class RoundRobinSimulation(BaseSimulation):
         q_remaining: int = 0
 
         logger: Logger = RunContext.current().get_logger(alg_name="RR", label=f'q{quantum}')
-        cls._flush_log_header(
+        LoggingUtils.flush_log_header(
             logger=logger,
             message=f"Round Robin Scheduler  |  {quantum=}  {ctx_switch_cost=})",
             processes=processes
         )
 
+        def enqueue(pid: str):
+            ready_pids.append(pid)
+
         while ready_pids or running_pid is not None or next_arrival < len(processes):
             log_parts = [f"[{time:03}]"]
-            next_arrival = cls.__enqueue_arrived_processes(
+            next_arrival = cls._enqueue_arrived_processes(
                 time=time,
                 processes=processes,
-                ready_pids=ready_pids,
                 next_arrival=next_arrival,
+                enqueue_func=enqueue,
                 log_parts=log_parts
             )
 
             if switch_remaining > 0:
-                log_parts.append(cls._get_log_part(
+                log_parts.append(LoggingUtils.get_log_part(
                     event=SchedulingTimelineState.SWITCHING,
                     detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
                 ))
                 switch_remaining -= 1
                 time += 1
-                cls._flush_log_parts(logger=logger, parts=log_parts)
+                LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
                 continue
 
             if running_pid is None:
                 if not ready_pids:
-                    log_parts.append(cls._get_log_part(event=SchedulingTimelineState.IDLE))
+                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineState.IDLE))
                     time += 1
                     last_pid = None
-                    cls._flush_log_parts(logger=logger, parts=log_parts)
+                    LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
                     continue
 
                 if last_pid is not None and last_pid != ready_pids[0]:
@@ -95,7 +99,7 @@ class RoundRobinSimulation(BaseSimulation):
                 if last_pid != running_pid:
                     if start_times[running_pid] == -1:
                         start_times[running_pid] = time
-                    log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
+                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
 
             cls._append_execution_step(
                 steps=steps,
@@ -104,7 +108,7 @@ class RoundRobinSimulation(BaseSimulation):
                 end=time + 1
             )
 
-            log_parts.append(cls._get_log_part(
+            log_parts.append(LoggingUtils.get_log_part(
                 event=SchedulingTimelineState.RUNNING,
                 pid=running_pid,
                 detail=(
@@ -118,21 +122,21 @@ class RoundRobinSimulation(BaseSimulation):
             time += 1
 
             if remaining_times[running_pid] == 0:
-                log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
+                log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
                 finish_times[running_pid] = time
                 last_pid = running_pid
                 running_pid = None
             elif q_remaining == 0:
-                log_parts.append(cls._get_log_part(
+                log_parts.append(LoggingUtils.get_log_part(
                     event=SchedulingTimelineEvent.PREEMPT,
                     pid=running_pid,
                     detail=f"(r={remaining_times[running_pid]})"
                 ))
-                ready_pids.append(running_pid)
+                enqueue(running_pid)
                 last_pid = running_pid
                 running_pid = None
 
-            cls._flush_log_parts(logger=logger, parts=log_parts)
+            LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
 
         logger.debug("")
 
@@ -150,18 +154,3 @@ class RoundRobinSimulation(BaseSimulation):
                 ctx_switch_count=ctx_switch_count
             )
         )
-
-    @classmethod
-    def __enqueue_arrived_processes(
-        cls,
-        log_parts: list[str],
-        time: int,
-        processes: List[SchedulingWorkloadProcessSchema],
-        ready_pids: deque[str],
-        next_arrival: int,
-    ) -> int:
-        while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
-            ready_pids.append(processes[next_arrival].pid)
-            log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
-            next_arrival += 1
-        return next_arrival

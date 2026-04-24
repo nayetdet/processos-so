@@ -13,6 +13,7 @@ from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import Schedu
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_schema import SchedulingTimelineSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 from rr_srtf.simulations.base_simulation import BaseSimulation
+from rr_srtf.utils.logging_utils import LoggingUtils
 
 class ShortestRemainingTimeFirstSimulation(BaseSimulation):
     SEED: int = 0
@@ -48,32 +49,33 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         rng: Random = Random(cls.SEED)
 
         logger: Logger = RunContext.current().get_logger(alg_name="SRTF")
-        cls._flush_log_header(
+        LoggingUtils.flush_log_header(
             logger=logger,
             message=f"Shortest Remaining Time First Scheduler  |  {ctx_switch_cost=})",
             processes=processes
         )
 
+        def enqueue(pid: str) -> None:
+            heapq.heappush(ready_pids, (remaining_times[pid], rng.random(), pid))
+
         while ready_pids or running_pid is not None or next_arrival < len(processes):
             log_parts = [f"[{time:03}]"]
-            next_arrival = cls.__enqueue_arrived_processes(
+            next_arrival = cls._enqueue_arrived_processes(
                 time=time,
-                log_parts=log_parts,
                 processes=processes,
-                ready_pids=ready_pids,
-                remaining_times=remaining_times,
                 next_arrival=next_arrival,
-                rng=rng
+                enqueue_func=enqueue,
+                log_parts=log_parts,
             )
 
             if switch_remaining > 0:
-                log_parts.append(cls._get_log_part(
+                log_parts.append(LoggingUtils.get_log_part(
                     event=SchedulingTimelineState.SWITCHING,
                     detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
                 ))
                 switch_remaining -= 1
                 time += 1
-                cls._flush_log_parts(logger=logger, parts=log_parts)
+                LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
                 continue
 
             if running_pid is not None and cls.__should_preempt(
@@ -81,21 +83,21 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 ready_pids=ready_pids,
                 remaining_times=remaining_times
             ):
-                log_parts.append(cls._get_log_part(
+                log_parts.append(LoggingUtils.get_log_part(
                     event=SchedulingTimelineEvent.PREEMPT,
                     pid=running_pid,
                     detail=f"(r={remaining_times[running_pid]})"
                 ))
-                heapq.heappush(ready_pids, (remaining_times[running_pid], rng.random(), running_pid))
+                enqueue(running_pid)
                 last_pid = running_pid
                 running_pid = None
 
             if running_pid is None:
                 if not ready_pids:
-                    log_parts.append(cls._get_log_part(event=SchedulingTimelineState.IDLE))
+                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineState.IDLE))
                     time += 1
                     last_pid = None
-                    cls._flush_log_parts(logger=logger, parts=log_parts)
+                    LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
                     continue
 
                 if last_pid is not None and last_pid != ready_pids[0][2]:
@@ -110,7 +112,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 if last_pid != running_pid:
                     if start_times[running_pid] == -1:
                         start_times[running_pid] = time
-                    log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
+                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
 
             cls._append_execution_step(
                 steps=steps,
@@ -119,7 +121,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 end=time + 1
             )
 
-            log_parts.append(cls._get_log_part(
+            log_parts.append(LoggingUtils.get_log_part(
                 event=SchedulingTimelineState.RUNNING,
                 pid=running_pid,
                 detail=f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
@@ -129,12 +131,12 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
             time += 1
 
             if remaining_times[running_pid] == 0:
-                log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
+                log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
                 finish_times[running_pid] = time
                 last_pid = running_pid
                 running_pid = None
 
-            cls._flush_log_parts(logger=logger, parts=log_parts)
+            LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
 
         logger.debug("")
 
@@ -151,24 +153,6 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 ctx_switch_count=ctx_switch_count
             ),
         )
-
-    @classmethod
-    def __enqueue_arrived_processes(
-        cls,
-        log_parts: list[str],
-        time: int,
-        processes: List[SchedulingWorkloadProcessSchema],
-        ready_pids: list[tuple[int, float, str]],
-        remaining_times: Dict[str, int],
-        next_arrival: int,
-        rng: Random
-    ) -> int:
-        while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
-            pid: str = processes[next_arrival].pid
-            heapq.heappush(ready_pids, (remaining_times[pid], rng.random(), pid))
-            log_parts.append(cls._get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
-            next_arrival += 1
-        return next_arrival
 
     @staticmethod
     def __should_preempt(

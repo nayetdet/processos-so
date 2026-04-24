@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from logging import Logger
-from typing import List
+from typing import List, Callable
 
 from rr_srtf.enums.scheduling_timeline_event import SchedulingTimelineEvent
 from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
@@ -8,6 +7,7 @@ from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResult
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
+from rr_srtf.utils.logging_utils import LoggingUtils
 
 
 class BaseSimulation(ABC):
@@ -15,6 +15,21 @@ class BaseSimulation(ABC):
     @abstractmethod
     def simulate(cls, scheduling: SchedulingSchema) -> List[SchedulingResultSchema]:
         pass
+
+    @classmethod
+    def _enqueue_arrived_processes(
+            cls,
+            time: int,
+            processes: List[SchedulingWorkloadProcessSchema],
+            next_arrival: int,
+            enqueue_func: Callable[[str], None],
+            log_parts: list[str]
+    ) -> int:
+        while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
+            enqueue_func(processes[next_arrival].pid)
+            log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
+            next_arrival += 1
+        return next_arrival
 
     @staticmethod
     def _append_execution_step(
@@ -46,23 +61,3 @@ class BaseSimulation(ABC):
                 end=end
             )
         )
-
-    @staticmethod
-    def _get_log_part(
-        event: SchedulingTimelineState | SchedulingTimelineEvent,
-        pid: str = "",
-        detail: str = ""
-    ) -> str:
-        event_pid: str = f"{event.value:<8}   [{pid}]" if pid != "" else f"{event.value}"
-        return f"{f"{event_pid:<16}  {"" if detail == "" else f'{detail}'}":<45}"
-
-    @staticmethod
-    def _flush_log_header(logger: Logger, message: str, processes: List[SchedulingWorkloadProcessSchema]) -> None:
-        logger.info("=" * 60)
-        logger.info(message)
-        logger.info(f"Processes: {[(p.pid, p.arrival_time, p.burst_time) for p in processes]}")
-        logger.info("=" * 60)
-
-    @staticmethod
-    def _flush_log_parts(logger: Logger, parts: List[str]) -> None:
-        logger.debug(" | ".join(parts))
