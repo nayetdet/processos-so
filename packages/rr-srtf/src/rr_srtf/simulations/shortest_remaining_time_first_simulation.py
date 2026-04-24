@@ -1,8 +1,12 @@
 import heapq
+from logging import Logger
 from random import Random
 from typing import Dict, List, Optional
 
 from rr_srtf.analysis.scheduling_analysis import SchedulingAnalysis
+from rr_srtf.context import RunContext
+from rr_srtf.enums.scheduling_timeline_event import SchedulingTimelineEvent
+from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
 from rr_srtf.schemas.scheduling.scheduling_result_schema import SchedulingResultSchema
 from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
@@ -24,9 +28,10 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
 
     @classmethod
     def __simulate_once(cls, scheduling: SchedulingSchema) -> SchedulingResultSchema:
-        context_switch_cost: int = scheduling.metadata.context_switch_cost
+        ctx_switch_cost: int = scheduling.metadata.context_switch_cost
         processes: List[SchedulingWorkloadProcessSchema] = scheduling.workload.processes
         steps: List[SchedulingTimelineStepSchema] = []
+        log_parts: list[str]
         remaining_times: Dict[str, int] = {p.pid: p.burst_time for p in processes}
         start_times: Dict[str, int] = {p.pid: -1 for p in processes}
         finish_times: Dict[str, int] = {p.pid: -1 for p in processes}
@@ -39,9 +44,18 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         last_pid: Optional[str] = None
         ctx_switch_count: int = 0
 
+        logger: Logger = RunContext.current().get_logger(alg_name="SRTF")
+        cls._flush_log_header(
+            logger=logger,
+            message=f"Shortest Remaining Time First Scheduler  |  {ctx_switch_cost=})",
+            processes=processes
+        )
+
         while ready_pids or running_pid is not None or next_arrival < len(processes):
+            log_parts = [f"[{time:03}]"]
             next_arrival = cls.__enqueue_arrived_processes(
                 time=time,
+                log_parts=log_parts,
                 processes=processes,
                 ready_pids=ready_pids,
                 remaining_times=remaining_times,
@@ -54,19 +68,46 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 ready_pids=ready_pids,
                 remaining_times=remaining_times
             ):
+                log_parts.append(cls._get_log_part(
+                    event=SchedulingTimelineEvent.PREEMPT,
+                    pid=running_pid,
+                    detail=f"(r={remaining_times[running_pid]})"
+                ))
                 heapq.heappush(ready_pids, (remaining_times[running_pid], rng.random(), running_pid))
                 last_pid = running_pid
                 running_pid = None
 
             if running_pid is None:
                 if not ready_pids:
-                    time = processes[next_arrival].arrival_time
+                    for _ in range(processes[next_arrival].arrival_time - time):
+                        log_parts.append(cls._get_log_part(
+                            event=SchedulingTimelineState.IDLE
+                        ))
+                        cls._flush_log_parts(logger=logger, parts=log_parts)
+                        time += 1
+                        log_parts = [f"[{time:03}]"]
                     last_pid = None
                     continue
 
                 if last_pid is not None and last_pid != ready_pids[0][2]:
-                    if context_switch_cost > 0:
-                        time += context_switch_cost
+                    if ctx_switch_cost > 0:
+                        for i in range(ctx_switch_cost):
+                            next_arrival = cls.__enqueue_arrived_processes(
+                                time=time,
+                                log_parts=log_parts,
+                                processes=processes,
+                                ready_pids=ready_pids,
+                                remaining_times=remaining_times,
+                                next_arrival=next_arrival,
+                                rng=rng
+                            )
+                            log_parts.append(cls._get_log_part(
+                                event=SchedulingTimelineState.SWITCHING,
+                                detail=f"{f'(t={ctx_switch_cost - i} → {ctx_switch_cost - i - 1})':<13}"
+                            ))
+                            cls._flush_log_parts(logger=logger, parts=log_parts)
+                            time += 1
+                            log_parts = [f"[{time:03}]"]
                         ctx_switch_count += 1
                         last_pid = None
                         continue
@@ -76,6 +117,11 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 if start_times[running_pid] == -1:
                     start_times[running_pid] = time
 
+                log_parts.append(cls._get_log_part(
+                    event=SchedulingTimelineEvent.DISPATCH,
+                    pid=running_pid
+                ))
+
             cls._append_execution_step(
                 steps=steps,
                 pid=running_pid,
@@ -83,13 +129,27 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
                 end=time + 1
             )
 
+            log_parts.append(cls._get_log_part(
+                event=SchedulingTimelineState.RUNNING,
+                pid=running_pid,
+                detail=f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
+            ))
+
             remaining_times[running_pid] -= 1
             time += 1
 
             if remaining_times[running_pid] == 0:
+                log_parts.append(cls._get_log_part(
+                    event=SchedulingTimelineEvent.FINISH,
+                    pid=running_pid
+                ))
                 finish_times[running_pid] = time
                 last_pid = running_pid
                 running_pid = None
+
+            cls._flush_log_parts(logger=logger, parts=log_parts)
+
+        logger.debug("")
 
         return SchedulingResultSchema(
             timeline=SchedulingTimelineSchema(
@@ -105,8 +165,10 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
             ),
         )
 
-    @staticmethod
+    @classmethod
     def __enqueue_arrived_processes(
+        cls,
+        log_parts: list[str],
         time: int,
         processes: List[SchedulingWorkloadProcessSchema],
         ready_pids: list[tuple[int, float, str]],
@@ -117,6 +179,10 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         while next_arrival < len(processes) and processes[next_arrival].arrival_time <= time:
             pid: str = processes[next_arrival].pid
             heapq.heappush(ready_pids, (remaining_times[pid], rng.random(), pid))
+            log_parts.append(cls._get_log_part(
+                event=SchedulingTimelineEvent.ARRIVE,
+                pid=processes[next_arrival].pid
+            ))
             next_arrival += 1
         return next_arrival
 
