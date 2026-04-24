@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import List, Callable
+from contextlib import contextmanager
+from logging import Logger
+from types import SimpleNamespace
+from typing import List, Callable, Generator
 
 from rr_srtf.enums.scheduling_timeline_event import SchedulingTimelineEvent
 from rr_srtf.enums.scheduling_timeline_state import SchedulingTimelineState
@@ -8,7 +11,6 @@ from rr_srtf.schemas.scheduling.scheduling_schema import SchedulingSchema
 from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import SchedulingWorkloadProcessSchema
 from rr_srtf.schemas.scheduling_timeline.scheduling_timeline_step_schema import SchedulingTimelineStepSchema
 from rr_srtf.utils.logging_utils import LoggingUtils
-
 
 class BaseSimulation(ABC):
     @classmethod
@@ -23,11 +25,11 @@ class BaseSimulation(ABC):
             processes: List[SchedulingWorkloadProcessSchema],
             next_arrival: int,
             enqueue_func: Callable[[str], None],
-            log_parts: list[str]
+            tick: SimpleNamespace,
     ) -> int:
         while next_arrival < len(processes) and processes[next_arrival].arrival_time == time:
             enqueue_func(processes[next_arrival].pid)
-            log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid))
+            tick.log(event=SchedulingTimelineEvent.ARRIVE, pid=processes[next_arrival].pid)
             next_arrival += 1
         return next_arrival
 
@@ -61,3 +63,15 @@ class BaseSimulation(ABC):
                 end=end
             )
         )
+
+    @staticmethod
+    @contextmanager
+    def _tick(time: int, logger: Logger) -> Generator[SimpleNamespace, None, None]:
+        parts: list[str] = [f"[{time:03}]"]
+
+        def log(event: SchedulingTimelineState | SchedulingTimelineEvent, pid: str = "", detail: str = "") -> None:
+            parts.append(LoggingUtils.get_log_part(event=event, pid=pid, detail=detail))
+
+        yield SimpleNamespace(log=log)
+
+        LoggingUtils.flush_log_parts(logger=logger, parts=parts)

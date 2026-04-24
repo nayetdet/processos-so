@@ -33,7 +33,6 @@ class RoundRobinSimulation(BaseSimulation):
         ctx_switch_cost: int = scheduling.metadata.context_switch_cost
         processes: List[SchedulingWorkloadProcessSchema] = scheduling.workload.processes
         steps: List[SchedulingTimelineStepSchema] = []
-        log_parts: list[str]
 
         remaining_times: Dict[str, int] = {p.pid: p.burst_time for p in processes}
         start_times: Dict[str, int] = {p.pid: -1 for p in processes}
@@ -59,84 +58,86 @@ class RoundRobinSimulation(BaseSimulation):
             ready_pids.append(pid)
 
         while ready_pids or running_pid is not None or next_arrival < len(processes):
-            log_parts = [f"[{time:03}]"]
-            next_arrival = cls._enqueue_arrived_processes(
-                time=time,
-                processes=processes,
-                next_arrival=next_arrival,
-                enqueue_func=enqueue,
-                log_parts=log_parts
-            )
+            with cls._tick(time=time, logger=logger) as tick:
+                next_arrival = cls._enqueue_arrived_processes(
+                    time=time,
+                    processes=processes,
+                    next_arrival=next_arrival,
+                    enqueue_func=enqueue,
+                    tick=tick
+                )
 
-            if switch_remaining > 0:
-                log_parts.append(LoggingUtils.get_log_part(
-                    event=SchedulingTimelineState.SWITCHING,
-                    detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
-                ))
-                switch_remaining -= 1
-                time += 1
-                LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
-                continue
-
-            if running_pid is None:
-                if not ready_pids:
-                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineState.IDLE))
+                if switch_remaining > 0:
+                    tick.log(
+                        event=SchedulingTimelineState.SWITCHING,
+                        detail=f"{f'(t={switch_remaining} → {switch_remaining - 1})':<13}"
+                    )
+                    switch_remaining -= 1
                     time += 1
-                    last_pid = None
-                    LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
                     continue
 
-                if last_pid is not None and last_pid != ready_pids[0]:
-                    if ctx_switch_cost > 0:
-                        switch_remaining = ctx_switch_cost
-                        ctx_switch_count += 1
+                if running_pid is None:
+                    if not ready_pids:
+                        tick.log(event=SchedulingTimelineState.IDLE)
+                        time += 1
                         last_pid = None
                         continue
-                    last_pid = None
 
-                running_pid = ready_pids.popleft()
-                q_remaining = quantum
-                if last_pid != running_pid:
-                    if start_times[running_pid] == -1:
-                        start_times[running_pid] = time
-                    log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid))
+                    if last_pid is not None and last_pid != ready_pids[0]:
+                        if ctx_switch_cost > 0:
+                            switch_remaining = ctx_switch_cost - 1
+                            ctx_switch_count += 1
+                            last_pid = None
+                            tick.log(
+                                event=SchedulingTimelineState.SWITCHING,
+                                detail=f"{f'(t={switch_remaining+1} → {switch_remaining})':<13}"
+                            )
+                            time += 1
+                            continue
+                        last_pid = None
 
-            cls._append_execution_step(
-                steps=steps,
-                pid=running_pid,
-                start=time,
-                end=time + 1
-            )
+                    running_pid = ready_pids.popleft()
+                    q_remaining = quantum
+                    if last_pid != running_pid:
+                        if start_times[running_pid] == -1:
+                            start_times[running_pid] = time
+                        tick.log(event=SchedulingTimelineEvent.DISPATCH, pid=running_pid)
 
-            log_parts.append(LoggingUtils.get_log_part(
-                event=SchedulingTimelineState.RUNNING,
-                pid=running_pid,
-                detail=(
-                    f"{f'(q={q_remaining} → {q_remaining - 1})':<13} "
-                    f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
-                )
-            ))
-
-            remaining_times[running_pid] -= 1
-            q_remaining -= 1
-            time += 1
-
-            if remaining_times[running_pid] == 0:
-                log_parts.append(LoggingUtils.get_log_part(event=SchedulingTimelineEvent.FINISH, pid=running_pid))
-                finish_times[running_pid] = time
-                last_pid = running_pid
-                running_pid = None
-            elif q_remaining == 0:
-                log_parts.append(LoggingUtils.get_log_part(
-                    event=SchedulingTimelineEvent.PREEMPT,
+                cls._append_execution_step(
+                    steps=steps,
                     pid=running_pid,
-                    detail=f"(r={remaining_times[running_pid]})"
-                ))
-                enqueue(running_pid)
-                last_pid = running_pid
-                running_pid = None
+                    start=time,
+                    end=time + 1
+                )
 
-            LoggingUtils.flush_log_parts(logger=logger, parts=log_parts)
+                tick.log(
+                    event=SchedulingTimelineState.RUNNING,
+                    pid=running_pid,
+                    detail=(
+                        f"{f'(q={q_remaining} → {q_remaining - 1})':<13} "
+                        f"{f'(r={remaining_times[running_pid]} → {remaining_times[running_pid] - 1})':<13}"
+                    )
+                )
+
+                remaining_times[running_pid] -= 1
+                q_remaining -= 1
+                time += 1
+
+                if remaining_times[running_pid] == 0:
+                    tick.log(event=SchedulingTimelineEvent.FINISH, pid=running_pid)
+                    finish_times[running_pid] = time
+                    last_pid = running_pid
+                    running_pid = None
+                elif q_remaining == 0:
+                    tick.log(
+                        event=SchedulingTimelineEvent.PREEMPT,
+                        pid=running_pid,
+                        detail=f"(r={remaining_times[running_pid]})"
+                    )
+                    enqueue(running_pid)
+                    last_pid = running_pid
+                    running_pid = None
+
 
         logger.debug("")
 
