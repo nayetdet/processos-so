@@ -6,6 +6,8 @@ from rr_srtf.schemas.scheduling.scheduling_workload_process_schema import Schedu
 from rr_srtf.schemas.scheduling.scheduling_metadata_schema import SchedulingMetadataSchema
 
 class SchedulingMockFactory:
+    SEED: int = 0
+
     SCHEDULING_SPEC_VERSION: str = "1.0"
     SCHEDULING_CHALLENGE_ID: str = "rr_srtf_preemptivo_demo"
 
@@ -22,7 +24,7 @@ class SchedulingMockFactory:
 
     @classmethod
     def mock(cls) -> SchedulingSchema:
-        rng: Random = Random()
+        rng: Random = Random(cls.SEED)
         arrivals: List[int] = cls.__mock_arrivals(rng)
         bursts: List[int] = cls.__mock_bursts(rng)
 
