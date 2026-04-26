@@ -42,6 +42,10 @@ def choose_next_turn():
     else:
         current_turn = None
 
+# verifica se há outra espécie esperando
+def other_species_waiting(my_group):
+    other = "CATS" if my_group == "DOGS" else "DOGS"
+    return any(get_group(a["species"]) == other for a in waiting_queue)
 
 def animal_process(animal):
     global dogs_in_room, cats_in_room, current_turn
@@ -68,7 +72,9 @@ def animal_process(animal):
                     can_enter = True
 
             elif current_state == my_group and current_turn == my_group:
-                can_enter = True
+                # só entra se NÃO houver outra espécie esperando
+                if not other_species_waiting(my_group):
+                    can_enter = True
 
             if can_enter:
                 waiting_queue.remove(animal)
