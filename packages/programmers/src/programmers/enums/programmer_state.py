@@ -1,0 +1,8 @@
+from enum import StrEnum
+
+class ProgrammerState(StrEnum):
+    THINKING = "PENSANDO"
+    WAITING_DB = "AGUARDANDO_DB"
+    USING_DB = "USANDO_DB"
+    WAITING_COMPILER = "AGUARDANDO_COMPILADOR"
+    COMPILING = "COMPILANDO"
