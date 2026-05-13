@@ -44,7 +44,7 @@ class ShortestRemainingTimeFirstSimulation(BaseSimulation):
         last_pid: Optional[str] = None
         ctx_switch_count: int = 0
         switch_remaining: int = 0
-        ready_pids: list[tuple[int, float, str]] = []
+        ready_pids: list[tuple[int, float, str]] = [] # (remaining_time, random_tie_breaker, pid)
         rng: Random = Random(cls.SEED)
 
         logger: Logger = RunContext.current().get_logger(alg_name="SRTF")
