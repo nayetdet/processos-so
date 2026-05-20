@@ -14,3 +14,6 @@ programmers:
 
 rr-srtf:
 	uv run python -m rr_srtf
+
+rr-srtf-with-input:
+	uv run python -m rr_srtf packages/rr-srtf/data/scheduling.json

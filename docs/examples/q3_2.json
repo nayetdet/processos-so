@@ -1,0 +1,42 @@
+{
+  "spec_version": "1.0",
+  "challenge_id": "vet_room_protocol_demo_v2",
+  "metadata": {
+    "room_count": 1,
+    "allowed_states": ["EMPTY", "DOGS", "CATS"],
+    "sign_change_latency": 0,
+    "tie_breaker": ["arrival_time", "id"]
+  },
+  "room": {
+    "initial_sign_state": "EMPTY"
+  },
+  "workload": {
+    "time_unit": "ticks",
+    "animals": [
+      { "id": "D01", "species": "DOG", "arrival_time": 0,  "rest_duration": 8 },
+      { "id": "C01", "species": "CAT", "arrival_time": 1,  "rest_duration": 6 },
+      { "id": "D02", "species": "DOG", "arrival_time": 2,  "rest_duration": 15 },
+      { "id": "C02", "species": "CAT", "arrival_time": 3,  "rest_duration": 4 },
+      { "id": "D03", "species": "DOG", "arrival_time": 5,  "rest_duration": 3 },
+      { "id": "C03", "species": "CAT", "arrival_time": 8,  "rest_duration": 10 },
+      { "id": "D04", "species": "DOG", "arrival_time": 8,  "rest_duration": 7 },
+      { "id": "C04", "species": "CAT", "arrival_time": 10, "rest_duration": 2 },
+      { "id": "D05", "species": "DOG", "arrival_time": 14, "rest_duration": 9 },
+      { "id": "C05", "species": "CAT", "arrival_time": 16, "rest_duration": 7 },
+      { "id": "D06", "species": "DOG", "arrival_time": 20, "rest_duration": 5 },
+      { "id": "C06", "species": "CAT", "arrival_time": 21, "rest_duration": 6 },
+      { "id": "D07", "species": "DOG", "arrival_time": 28, "rest_duration": 4 },
+      { "id": "C07", "species": "CAT", "arrival_time": 29, "rest_duration": 3 },
+      { "id": "D08", "species": "DOG", "arrival_time": 37, "rest_duration": 8 },
+      { "id": "C08", "species": "CAT", "arrival_time": 38, "rest_duration": 9 },
+      { "id": "D09", "species": "DOG", "arrival_time": 46, "rest_duration": 2 },
+      { "id": "C09", "species": "CAT", "arrival_time": 47, "rest_duration": 12 },
+      { "id": "D10", "species": "DOG", "arrival_time": 60, "rest_duration": 6 },
+      { "id": "C10", "species": "CAT", "arrival_time": 62, "rest_duration": 5 },
+      { "id": "D11", "species": "DOG", "arrival_time": 70, "rest_duration": 4 },
+      { "id": "C11", "species": "CAT", "arrival_time": 70, "rest_duration": 4 },
+      { "id": "D12", "species": "DOG", "arrival_time": 75, "rest_duration": 10 },
+      { "id": "C12", "species": "CAT", "arrival_time": 80, "rest_duration": 8 }
+    ]
+  }
+}

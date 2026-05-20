@@ -1,0 +1,22 @@
+{
+  "spec_version": "1.0",
+  "challenge_id": "rr_srtf_preemptivo_case03",
+  "metadata": {
+    "context_switch_cost": 1,
+    "throughput_window_T": 150,
+    "algorithms": ["RR", "SRTF"],
+    "rr_quantums": [1, 3, 5, 7]
+  },
+  "workload": {
+    "time_unit": "ticks",
+    "processes": [
+      { "pid": "P01", "arrival_time": 0,  "burst_time": 20 },
+      { "pid": "P02", "arrival_time": 2,  "burst_time": 5 },
+      { "pid": "P03", "arrival_time": 4,  "burst_time": 1 },
+      { "pid": "P04", "arrival_time": 6,  "burst_time": 8 },
+      { "pid": "P05", "arrival_time": 9,  "burst_time": 14 },
+      { "pid": "P06", "arrival_time": 11, "burst_time": 3 },
+      { "pid": "P07", "arrival_time": 13, "burst_time": 11 }
+    ]
+  }
+}
